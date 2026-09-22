@@ -1,0 +1,141 @@
+/* Shared state, settings loading and small helpers */
+#include "app.h"
+
+Shared g;
+SemaphoreHandle_t g_mtx, ruuvi_mtx, vic_mtx;
+Preferences prefs;
+
+RuuviTag tags[MAX_TAGS];
+VicCfg vic_cfg[MAX_VIC];
+VicData vic_data[MAX_VIC];
+VicSeen vic_seen[MAX_VIC_SEEN];
+
+RelayCfg relay_cfg = { 0, true, 8, {} };
+uint8_t relay_state = 0;
+bool pcf_ok = false;
+
+volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
+volatile bool cmd_save_ruuvi = false, cmd_save_vic = false, cmd_save_scan = false;
+volatile bool cmd_save_bl = false, cmd_save_relay = false;
+volatile bool scan_restart = false;
+
+volatile uint8_t scan_interval_s = 1;
+volatile uint8_t bl_normal = 100;
+volatile uint8_t bl_saver = 10;
+
+void state_init() {
+  g_mtx = xSemaphoreCreateMutex();
+  ruuvi_mtx = xSemaphoreCreateMutex();
+  vic_mtx = xSemaphoreCreateMutex();
+  for (int i = 0; i < MAX_VIC; i++) vic_clear_data(vic_data[i]);
+}
+
+void load_cfg() {
+  prefs.begin("wx", false);
+  prefs.getString("ssid", g.ssid, sizeof(g.ssid));
+  prefs.getString("pass", g.pass, sizeof(g.pass));
+  prefs.getString("city", g.city, sizeof(g.city));
+  prefs.getString("place", g.place, sizeof(g.place));
+  prefs.getString("ruuvi", g.ruuvi_sel, sizeof(g.ruuvi_sel));
+  g.has_loc = prefs.getBool("hasloc", false);
+  g.lat = prefs.getFloat("lat", 0);
+  g.lon = prefs.getFloat("lon", 0);
+  g.offset_valid = prefs.isKey("utcoff");
+  g.utc_offset = prefs.getInt("utcoff", 0);
+  if (g.has_loc) snprintf(g.loc_status, sizeof(g.loc_status), "Location: %s", g.place);
+  else strlcpy(g.loc_status, "No location set", sizeof(g.loc_status));
+
+  scan_interval_s = constrain(prefs.getUChar("scanint", 1), 1, 10);
+  bl_normal = constrain(prefs.getUChar("bl", 100), 5, 100);
+  bl_saver = constrain(prefs.getUChar("blsaver", 10), 0, 100);
+
+  if (prefs.getBytesLength("relay") == sizeof(relay_cfg)) prefs.getBytes("relay", &relay_cfg, sizeof(relay_cfg));
+  relay_cfg.count = constrain(relay_cfg.count, 1, MAX_RELAYS);
+  for (int i = 0; i < MAX_RELAYS; i++)
+    if (!relay_cfg.names[i][0]) snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), "Relay %d", i + 1);
+
+  memset(vic_cfg, 0, sizeof(vic_cfg));
+  if (prefs.getBytesLength("victron") == sizeof(vic_cfg)) prefs.getBytes("victron", vic_cfg, sizeof(vic_cfg));
+  int nvic = 0;
+  for (int i = 0; i < MAX_VIC; i++) nvic += vic_cfg[i].used;
+
+  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi='%s' victron=%d relay=0x%02X\n",
+                   g.ssid, g.city, g.place, g.lat, g.lon, g.ruuvi_sel, nvic, relay_cfg.addr);
+}
+
+void set_wifi_status(const char *fmt, ...) {
+  char buf[96];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  LOCK();
+  strlcpy(g.wifi_status, buf, sizeof(g.wifi_status));
+  g.status_changed = true;
+  UNLOCK();
+}
+
+void set_loc_status(const char *fmt, ...) {
+  char buf[128];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  LOCK();
+  strlcpy(g.loc_status, buf, sizeof(g.loc_status));
+  g.loc_changed = true;
+  UNLOCK();
+}
+
+void mac_short(const char *addr, char *out) {
+  if (strlen(addr) >= 17) {
+    out[0] = addr[12];
+    out[1] = addr[13];
+    out[2] = addr[15];
+    out[3] = addr[16];
+    out[4] = 0;
+  } else {
+    strcpy(out, "????");
+  }
+}
+
+const char *wmo_text(int c) {
+  switch (c) {
+    case 0: return "Clear sky";
+    case 1: return "Mainly clear";
+    case 2: return "Partly cloudy";
+    case 3: return "Overcast";
+    case 45: case 48: return "Fog";
+    case 51: case 53: case 55: return "Drizzle";
+    case 56: case 57: return "Freezing drizzle";
+    case 61: return "Light rain";
+    case 63: return "Rain";
+    case 65: return "Heavy rain";
+    case 66: case 67: return "Freezing rain";
+    case 71: return "Light snow";
+    case 73: return "Snow";
+    case 75: return "Heavy snow";
+    case 77: return "Snow grains";
+    case 80: case 81: case 82: return "Showers";
+    case 85: case 86: return "Snow showers";
+    case 95: return "Thunderstorm";
+    case 96: case 99: return "Thunder + hail";
+    default: return "Unknown";
+  }
+}
+
+String url_encode(const char *s) {
+  const char *hex = "0123456789ABCDEF";
+  String o;
+  for (; *s; s++) {
+    unsigned char c = (unsigned char)*s;
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      o += (char)c;
+    } else {
+      o += '%';
+      o += hex[c >> 4];
+      o += hex[c & 15];
+    }
+  }
+  return o;
+}
