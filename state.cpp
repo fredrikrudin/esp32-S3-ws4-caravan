@@ -6,6 +6,7 @@ SemaphoreHandle_t g_mtx, ruuvi_mtx, vic_mtx;
 Preferences prefs;
 
 RuuviTag tags[MAX_TAGS];
+RuuviCfg ruuvi_cfg[MAX_RUUVI];
 VicCfg vic_cfg[MAX_VIC];
 VicData vic_data[MAX_VIC];
 VicSeen vic_seen[MAX_VIC_SEEN];
@@ -36,7 +37,6 @@ void load_cfg() {
   prefs.getString("pass", g.pass, sizeof(g.pass));
   prefs.getString("city", g.city, sizeof(g.city));
   prefs.getString("place", g.place, sizeof(g.place));
-  prefs.getString("ruuvi", g.ruuvi_sel, sizeof(g.ruuvi_sel));
   g.has_loc = prefs.getBool("hasloc", false);
   g.lat = prefs.getFloat("lat", 0);
   g.lon = prefs.getFloat("lon", 0);
@@ -54,13 +54,32 @@ void load_cfg() {
   for (int i = 0; i < MAX_RELAYS; i++)
     if (!relay_cfg.names[i][0]) snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), "Relay %d", i + 1);
 
+  /* RuuviTags; the old single-tag setting becomes the first tag */
+  memset(ruuvi_cfg, 0, sizeof(ruuvi_cfg));
+  if (prefs.getBytesLength("ruuvis") == sizeof(ruuvi_cfg)) {
+    prefs.getBytes("ruuvis", ruuvi_cfg, sizeof(ruuvi_cfg));
+  } else {
+    char old[18] = "";
+    prefs.getString("ruuvi", old, sizeof(old));
+    if (old[0]) {
+      char s[8];
+      mac_short(old, s);
+      ruuvi_cfg[0].used = true;
+      strlcpy(ruuvi_cfg[0].mac, old, sizeof(ruuvi_cfg[0].mac));
+      snprintf(ruuvi_cfg[0].name, sizeof(ruuvi_cfg[0].name), "Ruuvi %s", s);
+      cmd_save_ruuvi = true;  // store in the new format
+    }
+  }
+  int nruuvi = 0;
+  for (int i = 0; i < MAX_RUUVI; i++) nruuvi += ruuvi_cfg[i].used;
+
   memset(vic_cfg, 0, sizeof(vic_cfg));
   if (prefs.getBytesLength("victron") == sizeof(vic_cfg)) prefs.getBytes("victron", vic_cfg, sizeof(vic_cfg));
   int nvic = 0;
   for (int i = 0; i < MAX_VIC; i++) nvic += vic_cfg[i].used;
 
-  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi='%s' victron=%d relay=0x%02X\n",
-                   g.ssid, g.city, g.place, g.lat, g.lon, g.ruuvi_sel, nvic, relay_cfg.addr);
+  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi=%d victron=%d relay=0x%02X\n",
+                   g.ssid, g.city, g.place, g.lat, g.lon, nruuvi, nvic, relay_cfg.addr);
 }
 
 void set_wifi_status(const char *fmt, ...) {

@@ -1,14 +1,18 @@
-/* Settings tab: WiFi, weather location, RuuviTag, display, sensor scan interval.
+/* Settings tab: WiFi, weather location, RuuviTags, display, sensor scan interval.
    The Victron, relay board and I2C sections live in their own files. */
 #include "app.h"
 
 lv_obj_t *lbl_wifi_status, *dd_ssid, *lbl_loc;  // also updated by net_poll_cb()
 
 static lv_obj_t *ta_pass, *ta_city;
-static lv_obj_t *dd_ruuvi, *lbl_ruuvi_sel;
+static lv_obj_t *dd_ruuvi, *ruuvi_list, *lbl_ruuvi_msg;
+static lv_obj_t *ruuvi_editor, *lbl_ruuvi_edit_title, *ta_rname;
+static lv_obj_t *ruuvi_list_lbl[MAX_RUUVI];
+static int ruuvi_edit_idx = -1;  // slot being edited, -1 = new tag
+static char ruuvi_edit_mac[18];
 static lv_obj_t *sl_bl, *lbl_bl, *sl_bl_saver, *lbl_bl_saver;
 static lv_obj_t *lbl_scan;
-static char dd_addr[MAX_TAGS][18];  // MAC for each Ruuvi dropdown row
+static char dd_addr[MAX_TAGS][18];  // MAC for each row of the Ruuvi "Add" list
 static int dd_count = 0;
 
 /* ---------- WiFi ---------- */
@@ -49,48 +53,151 @@ static void locate_btn_cb(lv_event_t *e) {
   locate_now();
 }
 
-/* ---------- RuuviTag ---------- */
-static void update_ruuvi_sel_label() {
-  char sel[18], s[8];
-  LOCK();
-  strlcpy(sel, g.ruuvi_sel, sizeof(sel));
-  UNLOCK();
-  if (!sel[0]) {
-    lv_label_set_text(lbl_ruuvi_sel, "No tag selected");
+/* ---------- RuuviTags (up to MAX_RUUVI, with names) ---------- */
+static void ruuvi_close_editor() {
+  lv_obj_add_flag(ruuvi_editor, LV_OBJ_FLAG_HIDDEN);
+  ruuvi_edit_idx = -1;
+  kb_hide();
+}
+
+static void ruuvi_open_editor(const char *mac, int slot) {
+  ruuvi_edit_idx = slot;
+  strlcpy(ruuvi_edit_mac, mac, sizeof(ruuvi_edit_mac));
+  char s[8], name[20];
+  mac_short(mac, s);
+  lv_label_set_text_fmt(lbl_ruuvi_edit_title, "Ruuvi %s  (%s)", s, mac);
+  if (slot >= 0) strlcpy(name, ruuvi_cfg[slot].name, sizeof(name));
+  else snprintf(name, sizeof(name), "Ruuvi %s", s);
+  lv_textarea_set_text(ta_rname, name);
+  lv_label_set_text(lbl_ruuvi_msg, "");
+  lv_obj_clear_flag(ruuvi_editor, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_update_layout(tab_settings);
+  lv_obj_scroll_to_view_recursive(ruuvi_editor, LV_ANIM_ON);
+}
+
+static void ruuvi_list_btn_cb(lv_event_t *e) {
+  int i = (int)(intptr_t)lv_event_get_user_data(e);
+  ruuvi_open_editor(ruuvi_cfg[i].mac, i);
+}
+
+static void ruuvi_rebuild_list() {
+  lv_obj_clean(ruuvi_list);
+  int count = 0;
+  for (int i = 0; i < MAX_RUUVI; i++) {
+    ruuvi_list_lbl[i] = NULL;
+    if (!ruuvi_cfg[i].used) continue;
+    lv_obj_t *b = lv_btn_create(ruuvi_list);
+    lv_obj_set_width(b, LV_PCT(100));
+    lv_obj_add_event_cb(b, ruuvi_list_btn_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_width(l, LV_PCT(100));
+    lv_label_set_text(l, ruuvi_cfg[i].name);
+    ruuvi_list_lbl[i] = l;
+    count++;
+  }
+  if (!count) {
+    lv_obj_t *l = make_grey_label(ruuvi_list);
+    lv_label_set_text(l, "No tags added yet");
+  }
+}
+
+static void ruuvi_save_now() {
+  const char *name = lv_textarea_get_text(ta_rname);
+  int slot = ruuvi_edit_idx;
+  if (slot < 0) {
+    for (int i = 0; i < MAX_RUUVI; i++) {
+      if (!ruuvi_cfg[i].used) {
+        slot = i;
+        break;
+      }
+    }
+  }
+  if (slot < 0) {
+    lv_label_set_text_fmt(lbl_ruuvi_msg, "Max %d tags. Delete one first.", MAX_RUUVI);
     return;
   }
-  mac_short(sel, s);
-  lv_label_set_text_fmt(lbl_ruuvi_sel, "Showing Ruuvi %s on the Temp tab", s);
-}
-
-static void ruuvi_use_cb(lv_event_t *e) {
-  uint16_t i = lv_dropdown_get_selected(dd_ruuvi);
-  if (i >= dd_count) return;  // "Searching..." row
+  char s[8];
+  mac_short(ruuvi_edit_mac, s);
   LOCK();
-  strlcpy(g.ruuvi_sel, dd_addr[i], sizeof(g.ruuvi_sel));
+  RuuviCfg &c = ruuvi_cfg[slot];
+  c.used = true;
+  strlcpy(c.mac, ruuvi_edit_mac, sizeof(c.mac));
+  if (name[0]) strlcpy(c.name, name, sizeof(c.name));
+  else snprintf(c.name, sizeof(c.name), "Ruuvi %s", s);
   UNLOCK();
   cmd_save_ruuvi = true;
-  update_ruuvi_sel_label();
+  ruuvi_close_editor();
+  ruuvi_rebuild_list();
 }
 
-/* Called once per second by ruuvi_timer_cb() with a copy of the tag table */
-void ruuvi_settings_refresh(const RuuviTag *copy, uint32_t now) {
-  if (lv_dropdown_is_open(dd_ruuvi)) return;  // don't change it under the user's finger
+static void ruuvi_save_cb(lv_event_t *e) {
+  ruuvi_save_now();
+}
 
-  char cur[18];
+static void ruuvi_delete_cb(lv_event_t *e) {
+  if (ruuvi_edit_idx >= 0) {
+    LOCK();
+    memset(&ruuvi_cfg[ruuvi_edit_idx], 0, sizeof(RuuviCfg));
+    UNLOCK();
+    cmd_save_ruuvi = true;
+  }
+  ruuvi_close_editor();
+  ruuvi_rebuild_list();
+}
+
+static void ruuvi_cancel_cb(lv_event_t *e) {
+  ruuvi_close_editor();
+}
+
+static void ruuvi_add_cb(lv_event_t *e) {
+  uint16_t i = lv_dropdown_get_selected(dd_ruuvi);
+  if (i >= dd_count) return;  // "Searching..." row
+  int used = 0;
+  for (int k = 0; k < MAX_RUUVI; k++) used += ruuvi_cfg[k].used;
+  if (used >= MAX_RUUVI) {
+    lv_label_set_text_fmt(lbl_ruuvi_msg, "Max %d tags. Tap one above and delete it first.", MAX_RUUVI);
+    return;
+  }
+  ruuvi_open_editor(dd_addr[i], -1);
+}
+
+static int ruuvi_cfg_index(const char *mac) {
+  for (int i = 0; i < MAX_RUUVI; i++)
+    if (ruuvi_cfg[i].used && !strcmp(ruuvi_cfg[i].mac, mac)) return i;
+  return -1;
+}
+
+/* Called once per second by ruuvi_timer_cb() with a copy of the tags in range */
+void ruuvi_settings_refresh(const RuuviTag *copy, uint32_t now) {
+  char b[96];
+
+  /* added tags: live temperature */
+  for (int i = 0; i < MAX_RUUVI; i++) {
+    if (!ruuvi_cfg[i].used || !ruuvi_list_lbl[i]) continue;
+    const RuuviTag *t = NULL;
+    for (int k = 0; k < MAX_TAGS; k++)
+      if (copy[k].used && !strcmp(copy[k].addr, ruuvi_cfg[i].mac)) t = &copy[k];
+    char s[8];
+    mac_short(ruuvi_cfg[i].mac, s);
+    if (t && t->has_temp && now - t->last_seen < 10UL * 60 * 1000)
+      snprintf(b, sizeof(b), "%s\nRuuvi %s  -  %.1f" DEG "C", ruuvi_cfg[i].name, s, t->temp);
+    else
+      snprintf(b, sizeof(b), "%s\nRuuvi %s  -  not heard", ruuvi_cfg[i].name, s);
+    set_label(ruuvi_list_lbl[i], b);
+  }
+
+  /* tags in range that aren't added yet (don't change the list under the user's finger) */
+  if (lv_dropdown_is_open(dd_ruuvi)) return;
+  char cur[18] = "";
   uint16_t ci = lv_dropdown_get_selected(dd_ruuvi);
   if (ci < dd_count) strlcpy(cur, dd_addr[ci], sizeof(cur));
-  else {
-    LOCK();
-    strlcpy(cur, g.ruuvi_sel, sizeof(cur));
-    UNLOCK();
-  }
 
   static char last_opts[MAX_TAGS * 40] = "";
   char opts[MAX_TAGS * 40] = "";
   int count = 0, cur_idx = 0;
   for (int i = 0; i < MAX_TAGS; i++) {
-    if (!copy[i].used || now - copy[i].last_seen > 10UL * 60 * 1000) continue;  // hide tags gone > 10 min
+    if (!copy[i].used || now - copy[i].last_seen > 10UL * 60 * 1000) continue;  // gone > 10 min
+    if (ruuvi_cfg_index(copy[i].addr) >= 0) continue;                          // already added
     char s[8], line[40];
     mac_short(copy[i].addr, s);
     if (copy[i].has_temp) snprintf(line, sizeof(line), "%sRuuvi %s   %.1f" DEG, count ? "\n" : "", s, copy[i].temp);
@@ -187,19 +294,45 @@ void build_settings_tab() {
   lv_label_set_long_mode(lbl_loc, LV_LABEL_LONG_WRAP);
   lv_label_set_text(lbl_loc, "");
 
-  /* RuuviTag */
-  make_heading(tab_settings, LV_SYMBOL_BLUETOOTH "  RuuviTag");
+  /* RuuviTags */
+  make_heading(tab_settings, LV_SYMBOL_BLUETOOTH "  RuuviTags (max 3)");
 
   row = make_row(tab_settings, LV_FLEX_ALIGN_START);
   dd_ruuvi = lv_dropdown_create(row);
   lv_obj_set_flex_grow(dd_ruuvi, 1);
   lv_dropdown_set_options(dd_ruuvi, "Searching...");
-  make_btn(row, LV_SYMBOL_OK " Use", ruuvi_use_cb);
+  make_btn(row, LV_SYMBOL_PLUS " Add", ruuvi_add_cb);
 
-  lbl_ruuvi_sel = lv_label_create(tab_settings);
-  lv_obj_set_width(lbl_ruuvi_sel, LV_PCT(100));
-  lv_label_set_long_mode(lbl_ruuvi_sel, LV_LABEL_LONG_WRAP);
-  update_ruuvi_sel_label();
+  ruuvi_list = lv_obj_create(tab_settings);
+  lv_obj_remove_style_all(ruuvi_list);
+  lv_obj_set_size(ruuvi_list, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(ruuvi_list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(ruuvi_list, 6, 0);
+  lv_obj_clear_flag(ruuvi_list, LV_OBJ_FLAG_SCROLLABLE);
+
+  ruuvi_editor = lv_obj_create(tab_settings);
+  lv_obj_set_size(ruuvi_editor, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(ruuvi_editor, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(ruuvi_editor, 8, 0);
+  lv_obj_clear_flag(ruuvi_editor, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(ruuvi_editor, LV_OBJ_FLAG_HIDDEN);
+  lbl_ruuvi_edit_title = lv_label_create(ruuvi_editor);
+  ta_rname = make_ta(ruuvi_editor, "Name, e.g. Inside", ruuvi_save_now);
+  lv_obj_set_width(ta_rname, LV_PCT(100));
+  lv_textarea_set_max_length(ta_rname, 19);
+  row = make_row(ruuvi_editor, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_SAVE " Save", ruuvi_save_cb);
+  lv_obj_t *del = make_btn(row, LV_SYMBOL_TRASH " Delete", ruuvi_delete_cb);
+  lv_obj_set_style_bg_color(del, lv_palette_main(LV_PALETTE_RED), 0);
+  make_btn(row, "Cancel", ruuvi_cancel_cb);
+
+  lbl_ruuvi_msg = lv_label_create(tab_settings);
+  lv_obj_set_width(lbl_ruuvi_msg, LV_PCT(100));
+  lv_label_set_long_mode(lbl_ruuvi_msg, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_color(lbl_ruuvi_msg, lv_palette_main(LV_PALETTE_ORANGE), 0);
+  lv_label_set_text(lbl_ruuvi_msg, "");
+
+  ruuvi_rebuild_list();
 
   /* Display */
   make_heading(tab_settings, LV_SYMBOL_IMAGE "  Display");

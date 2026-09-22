@@ -53,7 +53,8 @@
 #define SAVER_TIMEOUT_MS 30000  // screen saver after this long without touch
 #define SAVER_COLOR 0x505050    // screen saver clock color (dim grey)
 
-#define MAX_TAGS 8            // RuuviTags remembered at the same time
+#define MAX_TAGS 8            // RuuviTags in range remembered at the same time
+#define MAX_RUUVI 3           // RuuviTags that can be added and named
 #define MAX_VIC 6             // Victron devices that can be added
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
@@ -91,7 +92,6 @@ struct Shared {
   bool has_loc = false;
   int32_t utc_offset = 0;  // from Open-Meteo, follows DST
   bool offset_valid = false;
-  char ruuvi_sel[18] = "";  // MAC of the selected RuuviTag
   // results for the UI
   char wifi_status[96] = "Not connected";
   bool status_changed = true;
@@ -112,6 +112,13 @@ struct RuuviTag {
   int batt_mv = 0;
   int rssi = 0;
   uint32_t last_seen = 0;
+};
+
+/* RuuviTag: one entry per added tag, saved to flash as one block */
+struct RuuviCfg {
+  bool used;
+  char mac[18];
+  char name[20];
 };
 
 /* Victron: one entry per added device, saved to flash as one block */
@@ -165,6 +172,7 @@ extern SemaphoreHandle_t g_mtx, ruuvi_mtx, vic_mtx;
 extern Preferences prefs;
 
 extern RuuviTag tags[MAX_TAGS];
+extern RuuviCfg ruuvi_cfg[MAX_RUUVI];  // changed only by the UI (under g_mtx)
 extern VicCfg vic_cfg[MAX_VIC];
 extern VicData vic_data[MAX_VIC];
 extern VicSeen vic_seen[MAX_VIC_SEEN];

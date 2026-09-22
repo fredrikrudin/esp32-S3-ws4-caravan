@@ -223,11 +223,11 @@ static bool do_weather() {
 static void save_pending() {
   if (cmd_save_ruuvi) {
     cmd_save_ruuvi = false;
-    char sel[18];
+    RuuviCfg copy[MAX_RUUVI];
     LOCK();
-    strlcpy(sel, g.ruuvi_sel, sizeof(sel));
+    memcpy(copy, ruuvi_cfg, sizeof(copy));
     UNLOCK();
-    prefs.putString("ruuvi", sel);
+    prefs.putBytes("ruuvis", copy, sizeof(copy));
   }
   if (cmd_save_relay) {
     cmd_save_relay = false;
