@@ -12,10 +12,14 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 |---|---|
 | **Power** | Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
 | **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
-| **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names |
+| **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Relays can be set to "hold to switch" (orange while held) so a bump can't switch them |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
 | **⚙ Settings** | WiFi, weather location, RuuviTags, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
+
+A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+
+Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
 After 30 seconds without touch, a screen saver shows a dim clock and the battery state of charge (bar, percentage and a charging symbol), and lowers the backlight. A tap wakes it.
 
@@ -30,6 +34,10 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 #define SAVER_LOW_COLOR 0x702020  // bar color at low SOC (dim red)
 #define SAVER_LOW_SOC 20          // below this % the bar turns red
 ```
+
+A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+
+Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
@@ -57,6 +65,7 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `state.cpp` | Shared state, loading settings, small helpers |
 | `board.cpp` | Display, touch, IO expander, LVGL driver, backlight |
 | `net.cpp` | Network task: WiFi, NTP, weather, all flash writes |
+| `web.cpp` | Web page and JSON with battery, Victron and relay status |
 | `ble.cpp` | Bluetooth scanning |
 | `bms.cpp` | Battery BMS connection (experimental): JBD protocol and diagnostics |
 | `ruuvi.cpp` | RuuviTag decoding |
@@ -72,6 +81,7 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `ui_victron_settings.cpp` | Victron device settings |
 | `ui_saver.cpp` | Screen saver |
 | `power-tab.png` | Power tab picture for this README |
+| `memory.md` | Notes and plan for lowering memory use and latency |
 
 ## Libraries
 

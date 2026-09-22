@@ -50,6 +50,7 @@
 #define NO_NET_FOUND "No networks found"
 #define KB_H 220  // on-screen keyboard height
 
+#define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
 #define SAVER_TIMEOUT_MS 30000  // screen saver after this long without touch
 #define SAVER_COLOR 0x505050    // screen saver clock color (dim grey)
 
@@ -59,6 +60,7 @@
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
+#define RELAY_HOLD_MS 1000    // "hold to switch" relays: how long to hold the button
 #define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery tab
 #define BMS_MAX_CELLS 16
 #define BMS_MAX_TEMPS 6
@@ -95,6 +97,7 @@ struct Shared {
   bool has_loc = false;
   int32_t utc_offset = 0;  // from Open-Meteo, follows DST
   bool offset_valid = false;
+  char web_pass[33] = "";  // web page password, "" = no login
   // results for the UI
   char wifi_status[96] = "Not connected";
   bool status_changed = true;
@@ -215,12 +218,13 @@ extern VicSeen vic_seen[MAX_VIC_SEEN];
 
 extern BmsCfg bms_cfg;
 extern RelayCfg relay_cfg;
-extern uint8_t relay_state;  // bit set = relay ON
+extern uint8_t relay_state;      // bit set = relay ON
+extern uint8_t relay_hold_mask;  // bit set = relay needs "hold to switch"
 extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms;
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web;
 extern volatile bool scan_restart;
 
 extern volatile uint8_t scan_interval_s;  // BLE scan interval, 1-10 s (1 = continuous)
@@ -247,6 +251,10 @@ void set_backlight(uint8_t pct);
 
 /* net.cpp */
 void net_start();  // starts the network task (WiFi, NTP, weather, flash writes)
+
+/* web.cpp */
+void web_service();           // call from loop(): starts the web server once WiFi is up, then serves requests
+void web_password_changed();  // call after g.web_pass changed: logs everyone out
 
 /* ruuvi.cpp */
 void ruuvi_parse(const std::string &md, const char *addr, int rssi);

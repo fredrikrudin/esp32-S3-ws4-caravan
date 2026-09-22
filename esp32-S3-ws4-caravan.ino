@@ -3,6 +3,7 @@
  * Caravan display for the Waveshare ESP32-S3-Touch-LCD-4 (V4, CH32V003 IO expander).
  *
  * Tabs: Power (Victron BLE) | Battery (BMS, experimental) | Relays (PCF8574) | Temp (RuuviTag) | Weather | Settings
+ * Web page with battery, Victron and relay status: http://<board IP>/ (JSON at /json)
  * See README.md for libraries and Arduino IDE settings.
  */
 
@@ -31,6 +32,7 @@ void setup() {
 
 void loop() {
   ble_scan_service();
+  web_service();
   lv_timer_handler();
   delay(5);
 }

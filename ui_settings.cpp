@@ -1,10 +1,11 @@
-/* Settings tab: WiFi, weather location, RuuviTags, display, sensor scan interval.
+/* Settings tab: WiFi, web page password, weather location, RuuviTags, display, sensor scan interval.
    The Victron, relay board and I2C sections live in their own files. */
 #include "app.h"
 
 lv_obj_t *lbl_wifi_status, *dd_ssid, *lbl_loc;  // also updated by net_poll_cb()
 
 static lv_obj_t *ta_pass, *ta_city;
+static lv_obj_t *ta_webpass, *lbl_web;
 static lv_obj_t *dd_ruuvi, *ruuvi_list, *lbl_ruuvi_msg;
 static lv_obj_t *ruuvi_editor, *lbl_ruuvi_edit_title, *ta_rname;
 static lv_obj_t *ruuvi_list_lbl[MAX_RUUVI];
@@ -36,6 +37,30 @@ static void scan_btn_cb(lv_event_t *e) {
 }
 static void connect_btn_cb(lv_event_t *e) {
   connect_now();
+}
+
+/* ---------- Web page ---------- */
+static void update_web_label() {
+  bool has_pass;
+  LOCK();
+  has_pass = g.web_pass[0] != 0;
+  UNLOCK();
+  lv_label_set_text_fmt(lbl_web, "Open http://%s.local/ on the same WiFi.\n%s", MDNS_NAME,
+                        has_pass ? "Password required." : "No password: anyone on the WiFi can view the page.");
+}
+
+static void webpass_save_now() {
+  LOCK();
+  strlcpy(g.web_pass, lv_textarea_get_text(ta_webpass), sizeof(g.web_pass));
+  UNLOCK();
+  cmd_save_web = true;
+  web_password_changed();  // logs everyone out, so the new password applies at once
+  update_web_label();
+  kb_hide();
+}
+
+static void webpass_save_cb(lv_event_t *e) {
+  webpass_save_now();
 }
 
 /* ---------- Location ---------- */
@@ -279,6 +304,20 @@ void build_settings_tab() {
   lv_obj_set_flex_grow(lbl_wifi_status, 1);
   lv_label_set_long_mode(lbl_wifi_status, LV_LABEL_LONG_WRAP);
   lv_label_set_text(lbl_wifi_status, "");
+
+  /* Web page */
+  make_heading(tab_settings, LV_SYMBOL_EYE_OPEN "  Web page");
+  lbl_web = lv_label_create(tab_settings);
+  lv_obj_set_width(lbl_web, LV_PCT(100));
+  lv_label_set_long_mode(lbl_web, LV_LABEL_LONG_WRAP);
+  row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  ta_webpass = make_ta(row, "Password (empty = no login)", webpass_save_now);
+  lv_textarea_set_password_mode(ta_webpass, true);
+  lv_textarea_set_max_length(ta_webpass, 32);
+  lv_obj_set_flex_grow(ta_webpass, 1);
+  lv_textarea_set_text(ta_webpass, g.web_pass);
+  make_btn(row, LV_SYMBOL_SAVE " Save", webpass_save_cb);
+  update_web_label();
 
   /* Location */
   make_heading(tab_settings, LV_SYMBOL_GPS "  Weather location");

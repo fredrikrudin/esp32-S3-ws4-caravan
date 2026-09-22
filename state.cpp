@@ -14,11 +14,12 @@ VicSeen vic_seen[MAX_VIC_SEEN];
 RelayCfg relay_cfg = { 0, true, 8, {} };
 BmsCfg bms_cfg = { "", 0, "" };
 uint8_t relay_state = 0;
+uint8_t relay_hold_mask = 0;
 bool pcf_ok = false;
 
 volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
 volatile bool cmd_save_ruuvi = false, cmd_save_vic = false, cmd_save_scan = false;
-volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false;
+volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false, cmd_save_web = false;
 volatile bool scan_restart = false;
 
 volatile uint8_t scan_interval_s = 1;
@@ -38,6 +39,7 @@ void load_cfg() {
   prefs.getString("pass", g.pass, sizeof(g.pass));
   prefs.getString("city", g.city, sizeof(g.city));
   prefs.getString("place", g.place, sizeof(g.place));
+  prefs.getString("webpass", g.web_pass, sizeof(g.web_pass));
   g.has_loc = prefs.getBool("hasloc", false);
   g.lat = prefs.getFloat("lat", 0);
   g.lon = prefs.getFloat("lon", 0);
@@ -52,6 +54,7 @@ void load_cfg() {
 
   if (prefs.getBytesLength("relay") == sizeof(relay_cfg)) prefs.getBytes("relay", &relay_cfg, sizeof(relay_cfg));
   relay_cfg.count = constrain(relay_cfg.count, 1, MAX_RELAYS);
+  relay_hold_mask = prefs.getUChar("relayhold", 0);
   for (int i = 0; i < MAX_RELAYS; i++)
     if (!relay_cfg.names[i][0]) snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), "Relay %d", i + 1);
 

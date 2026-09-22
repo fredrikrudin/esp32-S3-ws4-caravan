@@ -236,6 +236,15 @@ static void save_pending() {
     copy = relay_cfg;
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
+    prefs.putUChar("relayhold", relay_hold_mask);
+  }
+  if (cmd_save_web) {
+    cmd_save_web = false;
+    char pass[33];
+    LOCK();
+    strlcpy(pass, g.web_pass, sizeof(pass));
+    UNLOCK();
+    prefs.putString("webpass", pass);
   }
   if (cmd_save_bms) {
     cmd_save_bms = false;
