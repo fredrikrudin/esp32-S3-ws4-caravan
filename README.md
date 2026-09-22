@@ -11,6 +11,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | Tab | What it shows |
 |---|---|
 | **Power** | Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
+| **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
 | **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
@@ -57,11 +58,13 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `board.cpp` | Display, touch, IO expander, LVGL driver, backlight |
 | `net.cpp` | Network task: WiFi, NTP, weather, all flash writes |
 | `ble.cpp` | Bluetooth scanning |
+| `bms.cpp` | Battery BMS connection (experimental): JBD protocol and diagnostics |
 | `ruuvi.cpp` | RuuviTag decoding |
 | `victron.cpp` | Victron decryption and decoding |
 | `relays.cpp` | PCF8574 relays and I2C scan |
 | `ui_common.cpp` | Tabs, keyboard, widget helpers, timers |
 | `ui_power.cpp` | Power tab |
+| `ui_battery.cpp` | Battery tab (experimental) |
 | `ui_relays.cpp` | Relays tab + relay and I2C settings |
 | `ui_temp.cpp` | Temp tab (RuuviTag cards) |
 | `ui_weather.cpp` | Weather tab and clock |
@@ -98,6 +101,7 @@ Optional, in `lv_conf.h`:
 - **External I2C** shares GPIO15/7 with touch and the CH32V003. The PCF8574 only supports 100 kHz, so the bus slows down briefly while talking to it.
 - ⚠️ Many PCF8574 relay boards pull I2C up to 5 V. The ESP32 is **not** 5 V tolerant: power the PCF8574 from 3.3 V, or make sure its pull-ups go to 3.3 V.
 - **Victron**: enable *Instant readout via Bluetooth* in VictronConnect and copy the encryption key from *Product info*.
+- **Battery tab (experimental)**: pick the battery in the list and tap Connect. Close the ECO-WORTHY app first, as the battery accepts only one Bluetooth connection. Batteries with a JBD BMS are decoded; for other BMS types the tab and the Serial Monitor show the GATT services and raw data, which is what's needed to add support.
 - **Weather** uses plain HTTP: HTTPS needs more internal RAM than is free with WiFi, Bluetooth and the display running.
 
 ## Troubleshooting

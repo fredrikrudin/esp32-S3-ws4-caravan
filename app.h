@@ -59,6 +59,9 @@
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
+#define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery tab
+#define BMS_MAX_CELLS 16
+#define BMS_MAX_TEMPS 6
 
 /* Victron Instant Readout record types */
 #define VIC_SOLAR 0x01
@@ -162,6 +165,39 @@ struct RelayCfg {
   char names[MAX_RELAYS][20];
 };
 
+/* Battery BMS over BLE (experimental), saved to flash as one block */
+struct BmsCfg {
+  char mac[18];  // "" = none chosen
+  uint8_t addr_type;
+  char name[32];
+};
+
+/* Named BLE devices heard, for the Battery tab's device list */
+struct BmsSeen {
+  bool used;
+  char name[32];
+  char mac[18];
+  uint8_t addr_type;
+  int rssi;
+  uint32_t last_seen;
+};
+
+/* Decoded BMS values (JBD protocol) and connection info */
+struct BmsData {
+  bool connected, is_jbd, valid, cells_valid;
+  uint32_t updated;  // millis() of last basic-info frame
+  float volt, curr, remain_ah, nominal_ah;
+  int cycles, soc;
+  bool chg_fet, dsg_fet;
+  uint16_t protection;
+  int ncell, ntemp;
+  float cell[BMS_MAX_CELLS];
+  float temp[BMS_MAX_TEMPS];
+  char status[96];       // connection status for the UI
+  char services[200];    // GATT services found (diagnostics)
+  char last_frame[100];  // last notification in hex (diagnostics)
+};
+
 /* ================================================================== */
 /* Shared state (state.cpp)                                           */
 /* ================================================================== */
@@ -177,13 +213,14 @@ extern VicCfg vic_cfg[MAX_VIC];
 extern VicData vic_data[MAX_VIC];
 extern VicSeen vic_seen[MAX_VIC_SEEN];
 
+extern BmsCfg bms_cfg;
 extern RelayCfg relay_cfg;
 extern uint8_t relay_state;  // bit set = relay ON
 extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay;
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms;
 extern volatile bool scan_restart;
 
 extern volatile uint8_t scan_interval_s;  // BLE scan interval, 1-10 s (1 = continuous)
@@ -227,7 +264,16 @@ const char *vic_status(const VicData &d, uint8_t type, uint32_t now);
 
 /* ble.cpp */
 void ble_start();
-void ble_scan_service();  // call from loop()
+void ble_scan_service();          // call from loop()
+void ble_pause_scan(bool pause);  // stop scanning while connecting to a device
+
+/* bms.cpp (experimental: battery BMS over BLE, JBD protocol + diagnostics) */
+void bms_start();  // starts the BMS task
+void bms_note_adv(const char *name, const char *mac, uint8_t addr_type, int rssi);  // from BLE scan
+void bms_connect_to(const char *mac, uint8_t addr_type, const char *name);          // from the UI
+void bms_get(BmsData *out);                      // copy of the current data
+int bms_get_seen(BmsSeen *out, int max);         // copy of the device list
+const char *bms_protection_text(uint16_t bits);  // NULL = no protection active
 
 /* relays.cpp */
 uint8_t relay_mask();
@@ -240,7 +286,7 @@ int i2c_scan(char *out, size_t len);  // returns number of devices found
 /* UI                                                                 */
 /* ================================================================== */
 /* ui_common.cpp */
-extern lv_obj_t *tab_power, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
+extern lv_obj_t *tab_power, *tab_battery, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
 void build_ui();
 void kb_show(lv_obj_t *ta);
 void kb_hide();
@@ -255,6 +301,10 @@ void set_label(lv_obj_t *l, const char *txt);  // only redraws when the text cha
 /* ui_power.cpp */
 void build_power_tab();
 void power_timer_cb(lv_timer_t *t);
+
+/* ui_battery.cpp */
+void build_battery_tab();
+void battery_timer_cb(lv_timer_t *t);
 
 /* ui_relays.cpp */
 void build_relays_tab();

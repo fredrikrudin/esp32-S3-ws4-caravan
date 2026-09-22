@@ -12,12 +12,13 @@ VicData vic_data[MAX_VIC];
 VicSeen vic_seen[MAX_VIC_SEEN];
 
 RelayCfg relay_cfg = { 0, true, 8, {} };
+BmsCfg bms_cfg = { "", 0, "" };
 uint8_t relay_state = 0;
 bool pcf_ok = false;
 
 volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
 volatile bool cmd_save_ruuvi = false, cmd_save_vic = false, cmd_save_scan = false;
-volatile bool cmd_save_bl = false, cmd_save_relay = false;
+volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false;
 volatile bool scan_restart = false;
 
 volatile uint8_t scan_interval_s = 1;
@@ -73,13 +74,15 @@ void load_cfg() {
   int nruuvi = 0;
   for (int i = 0; i < MAX_RUUVI; i++) nruuvi += ruuvi_cfg[i].used;
 
+  if (prefs.getBytesLength("bms") == sizeof(bms_cfg)) prefs.getBytes("bms", &bms_cfg, sizeof(bms_cfg));
+
   memset(vic_cfg, 0, sizeof(vic_cfg));
   if (prefs.getBytesLength("victron") == sizeof(vic_cfg)) prefs.getBytes("victron", vic_cfg, sizeof(vic_cfg));
   int nvic = 0;
   for (int i = 0; i < MAX_VIC; i++) nvic += vic_cfg[i].used;
 
-  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi=%d victron=%d relay=0x%02X\n",
-                   g.ssid, g.city, g.place, g.lat, g.lon, nruuvi, nvic, relay_cfg.addr);
+  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi=%d victron=%d relay=0x%02X bms='%s'\n",
+                   g.ssid, g.city, g.place, g.lat, g.lon, nruuvi, nvic, relay_cfg.addr, bms_cfg.name);
 }
 
 void set_wifi_status(const char *fmt, ...) {

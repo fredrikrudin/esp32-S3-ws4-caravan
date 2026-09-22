@@ -2,7 +2,7 @@
    All LVGL code runs in the Arduino loop task only. */
 #include "app.h"
 
-lv_obj_t *tab_power, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
+lv_obj_t *tab_power, *tab_battery, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
 static lv_coord_t settings_pad_bottom = 0;
 
 /* Hex keypad for the Victron encryption key */
@@ -125,6 +125,7 @@ void build_ui() {
 
   lv_obj_t *tv = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 50);
   tab_power = lv_tabview_add_tab(tv, "Power");
+  tab_battery = lv_tabview_add_tab(tv, "Battery");
   tab_relays = lv_tabview_add_tab(tv, "Relays");
   tab_temp = lv_tabview_add_tab(tv, "Temp");
   tab_weather = lv_tabview_add_tab(tv, "Weather");
@@ -132,6 +133,7 @@ void build_ui() {
   settings_pad_bottom = lv_obj_get_style_pad_bottom(tab_settings, LV_PART_MAIN);
 
   build_power_tab();
+  build_battery_tab();
   build_relays_tab();
   build_temp_tab();
   build_weather_tab();
@@ -149,5 +151,6 @@ void build_ui() {
   lv_timer_create(net_poll_cb, 200, NULL);
   lv_timer_create(ruuvi_timer_cb, 1000, NULL);
   lv_timer_create(power_timer_cb, 1000, NULL);
+  lv_timer_create(battery_timer_cb, 1000, NULL);
   lv_timer_create(saver_timer_cb, 500, NULL);
 }

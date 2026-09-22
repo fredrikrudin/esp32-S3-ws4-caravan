@@ -237,6 +237,14 @@ static void save_pending() {
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
   }
+  if (cmd_save_bms) {
+    cmd_save_bms = false;
+    BmsCfg copy;
+    LOCK();
+    copy = bms_cfg;
+    UNLOCK();
+    prefs.putBytes("bms", &copy, sizeof(copy));
+  }
   if (cmd_save_bl) {
     cmd_save_bl = false;
     prefs.putUChar("bl", bl_normal);
