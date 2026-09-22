@@ -15,9 +15,11 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 ## SCREENSAVER
 
 To adjust the look, change these lines at the top of ui_saver.cpp:
-- #define SAVER_BAR_BG 0x202020     // empty part of the SOC bar
-- #define SAVER_LOW_COLOR 0x702020  // bar color at low SOC (dim red)
-- #define SAVER_LOW_SOC 20          // below this % the bar turns red
+  ```c
+  #define SAVER_BAR_BG 0x202020     // empty part of the SOC bar
+  #define SAVER_LOW_COLOR 0x702020  // bar color at low SOC (dim red)
+  #define SAVER_LOW_SOC 20          // below this % the bar turns red
+   ```
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
 All settings are saved in flash and survive restarts.
