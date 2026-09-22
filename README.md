@@ -12,6 +12,12 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
 | **⚙ Settings** | WiFi, weather location, RuuviTag, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
 
+## SCREENSAVER
+
+To adjust the look, change these lines at the top of ui_saver.cpp:
+- #define SAVER_BAR_BG 0x202020     // empty part of the SOC bar
+- #define SAVER_LOW_COLOR 0x702020  // bar color at low SOC (dim red)
+- #define SAVER_LOW_SOC 20          // below this % the bar turns red
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
 All settings are saved in flash and survive restarts.
@@ -61,11 +67,6 @@ Optional, in `lv_conf.h`:
   #define LV_MEM_POOL_INCLUDE <esp32-hal-psram.h>
   #define LV_MEM_POOL_ALLOC ps_malloc
   ```
-## SCREENSAVER
-To adjust the look, change these lines at the top of ui_saver.cpp:
-#define SAVER_BAR_BG 0x202020     // empty part of the SOC bar
-#define SAVER_LOW_COLOR 0x702020  // bar color at low SOC (dim red)
-#define SAVER_LOW_SOC 20          // below this % the bar turns red
 
 ## Hardware notes
 
