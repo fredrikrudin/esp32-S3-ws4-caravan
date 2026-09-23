@@ -1,44 +1,14 @@
-/* Battery tab (experimental): choose the battery's BLE device, show BMS data,
-   and show diagnostics (services, last raw frame) to identify unknown protocols. */
+/* Battery tab: BMS values and diagnostics.
+   The battery itself is chosen under Settings -> Battery. */
 #include "app.h"
 
-static lv_obj_t *dd_bms, *lbl_bms_status;
+static lv_obj_t *lbl_bms_status;
 static lv_obj_t *lbl_soc, *lbl_main, *lbl_line1, *lbl_line2, *lbl_cells, *lbl_prot, *lbl_debug;
-static BmsSeen dd_seen[MAX_BMS_SEEN];  // device for each dropdown row
-static int dd_count = 0;
-
-/* case-insensitive "does name contain hint" */
-static bool contains_nocase(const char *name, const char *hint) {
-  size_t hl = strlen(hint);
-  for (const char *p = name; *p; p++)
-    if (!strncasecmp(p, hint, hl)) return true;
-  return false;
-}
-
-/* Names that are probably a battery go to the top of the list */
-static bool likely_battery(const char *name) {
-  const char *hints[] = { "BWOB", "ECO", "JBD", "DCHOUSE", "BMC", "SP0", "DP0", "xiaoxiang", "BMS" };
-  for (const char *h : hints)
-    if (contains_nocase(name, h)) return true;
-  return false;
-}
-
-static void connect_cb(lv_event_t *e) {
-  uint16_t i = lv_dropdown_get_selected(dd_bms);
-  if (i >= dd_count) return;  // "Searching..."
-  bms_connect_to(dd_seen[i].mac, dd_seen[i].addr_type, dd_seen[i].name);
-}
 
 void build_battery_tab() {
   lv_obj_set_flex_flow(tab_battery, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(tab_battery, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_row(tab_battery, 8, 0);
-
-  lv_obj_t *row = make_row(tab_battery, LV_FLEX_ALIGN_START);
-  dd_bms = lv_dropdown_create(row);
-  lv_obj_set_flex_grow(dd_bms, 1);
-  lv_dropdown_set_options(dd_bms, "Searching...");
-  make_btn(row, LV_SYMBOL_BLUETOOTH " Connect", connect_cb);
 
   lbl_bms_status = make_grey_label(tab_battery);
   lv_obj_set_width(lbl_bms_status, LV_PCT(100));
@@ -70,47 +40,6 @@ void build_battery_tab() {
   lbl_debug = make_grey_label(tab_battery);
   lv_obj_set_width(lbl_debug, LV_PCT(100));
   lv_label_set_long_mode(lbl_debug, LV_LABEL_LONG_WRAP);
-}
-
-static void refresh_device_list(uint32_t now) {
-  if (lv_dropdown_is_open(dd_bms)) return;  // don't change it under the user's finger
-
-  char cur[18] = "";
-  uint16_t ci = lv_dropdown_get_selected(dd_bms);
-  if (ci < dd_count) strlcpy(cur, dd_seen[ci].mac, sizeof(cur));
-  else {
-    LOCK();
-    strlcpy(cur, bms_cfg.mac, sizeof(cur));
-    UNLOCK();
-  }
-
-  BmsSeen list[MAX_BMS_SEEN];
-  int n = bms_get_seen(list, MAX_BMS_SEEN);
-  shelly_settings_refresh(list, n, now);  // the Shelly pairing list uses the same scan
-
-  /* likely batteries first, then the rest; skip devices gone for > 2 min */
-  static char last_opts[MAX_BMS_SEEN * 48] = "";
-  char opts[MAX_BMS_SEEN * 48] = "";
-  int count = 0, cur_idx = 0;
-  for (int pass = 0; pass < 2; pass++) {
-    for (int i = 0; i < n; i++) {
-      if (now - list[i].last_seen > 120000UL) continue;
-      if (likely_battery(list[i].name) != (pass == 0)) continue;
-      char line[48];
-      snprintf(line, sizeof(line), "%s%s", count ? "\n" : "", list[i].name);
-      strlcat(opts, line, sizeof(opts));
-      dd_seen[count] = list[i];
-      if (!strcmp(list[i].mac, cur)) cur_idx = count;
-      count++;
-    }
-  }
-  dd_count = count;
-  if (!count) strcpy(opts, "Searching...");
-  if (strcmp(opts, last_opts)) {
-    strlcpy(last_opts, opts, sizeof(last_opts));
-    lv_dropdown_set_options(dd_bms, opts);
-    lv_dropdown_set_selected(dd_bms, cur_idx);
-  }
 }
 
 void battery_timer_cb(lv_timer_t *t) {
@@ -204,5 +133,9 @@ void battery_timer_cb(lv_timer_t *t) {
     set_label(lbl_debug, "Close the ECO-WORTHY app on your phone: the battery accepts only one connection.");
   }
 
-  refresh_device_list(now);
+  /* the device list and the Connect button live in Settings now */
+  BmsSeen list[MAX_BMS_SEEN];
+  int n = bms_get_seen(list, MAX_BMS_SEEN);
+  bms_settings_refresh(list, n, now);
+  shelly_settings_refresh(list, n, now);
 }

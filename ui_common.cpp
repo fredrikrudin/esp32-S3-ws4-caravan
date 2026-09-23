@@ -2,6 +2,7 @@
    All LVGL code runs in the Arduino loop task only. */
 #include "app.h"
 
+static lv_obj_t *tabview;
 lv_obj_t *tab_home, *tab_power, *tab_battery, *tab_relays, *tab_shelly, *tab_temp, *tab_weather, *tab_settings, *kb;
 static lv_coord_t settings_pad_bottom = 0;
 
@@ -137,8 +138,77 @@ lv_obj_t *make_slider(lv_obj_t *parent, int min, int max, int val, lv_event_cb_t
   return sl;
 }
 
+/* Segmented Off | On control, in the style of the Victron switch pane.
+   The caller gets the button matrix; use set_segment() to show the state. */
+static const char *seg_map[] = { "Off", "On", "" };
+
+lv_obj_t *make_segment(lv_obj_t *parent, lv_event_cb_t cb, void *user_data) {
+  lv_obj_t *bm = lv_btnmatrix_create(parent);
+  lv_btnmatrix_set_map(bm, seg_map);
+  lv_obj_set_size(bm, LV_PCT(100), 52);
+  lv_btnmatrix_set_btn_ctrl_all(bm, LV_BTNMATRIX_CTRL_CHECKABLE | LV_BTNMATRIX_CTRL_NO_REPEAT);
+  lv_btnmatrix_set_one_checked(bm, true);
+
+  lv_obj_set_style_bg_opa(bm, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(bm, 0, 0);
+  lv_obj_set_style_pad_all(bm, 0, 0);
+  lv_obj_set_style_pad_column(bm, 0, 0);
+
+  lv_obj_set_style_radius(bm, 8, LV_PART_ITEMS);
+  lv_obj_set_style_bg_color(bm, lv_color_hex(0x0E2233), LV_PART_ITEMS);
+  lv_obj_set_style_bg_opa(bm, LV_OPA_COVER, LV_PART_ITEMS);
+  lv_obj_set_style_border_width(bm, 1, LV_PART_ITEMS);
+  lv_obj_set_style_border_color(bm, lv_color_hex(0x2F6FB5), LV_PART_ITEMS);
+  lv_obj_set_style_text_color(bm, lv_color_white(), LV_PART_ITEMS);
+  lv_obj_set_style_bg_color(bm, lv_color_hex(0x2F6FB5), LV_PART_ITEMS | LV_STATE_CHECKED);
+
+  lv_obj_add_event_cb(bm, cb, LV_EVENT_VALUE_CHANGED, user_data);
+  return bm;
+}
+
+void set_segment(lv_obj_t *seg, bool on) {
+  lv_btnmatrix_clear_btn_ctrl(seg, on ? 0 : 1, LV_BTNMATRIX_CTRL_CHECKED);
+  lv_btnmatrix_set_btn_ctrl(seg, on ? 1 : 0, LV_BTNMATRIX_CTRL_CHECKED);
+}
+
 void set_label(lv_obj_t *l, const char *txt) {
   if (strcmp(lv_label_get_text(l), txt)) lv_label_set_text(l, txt);
+}
+
+/* Tabs of switched-off features are hidden: their button is not drawn and is
+   squeezed to a sliver, and if you were on such a tab you land on Home. */
+void ui_update_tabs() {
+  if (!tabview) return;
+  lv_obj_t *btns = lv_tabview_get_tab_btns(tabview);
+  const struct {
+    uint16_t id;
+    volatile bool *feature;
+  } tabs[] = {
+    { 2, &feat_bms },     // Battery
+    { 3, &feat_relays },  // Relays
+    { 4, &feat_shelly },  // Shelly
+    { 5, &feat_ruuvi },   // Temp
+  };
+
+  uint16_t act = lv_tabview_get_tab_act(tabview);
+  bool act_hidden = false;
+  for (auto &t : tabs) {
+    if (*t.feature) {
+      lv_btnmatrix_clear_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_HIDDEN);
+      lv_btnmatrix_clear_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_DISABLED);
+      lv_btnmatrix_set_btn_width(btns, t.id, 10);
+    } else {
+      lv_btnmatrix_set_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_HIDDEN);
+      lv_btnmatrix_set_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_DISABLED);
+      lv_btnmatrix_set_btn_width(btns, t.id, 1);  // a sliver instead of a full-width gap
+      if (act == t.id) act_hidden = true;
+    }
+  }
+  /* the remaining tabs share the width evenly */
+  const uint16_t always_on[] = { 0, 1, 6, 7 };
+  for (uint16_t id : always_on) lv_btnmatrix_set_btn_width(btns, id, 10);
+
+  if (act_hidden) lv_tabview_set_act(tabview, 0, LV_ANIM_OFF);
 }
 
 /* ---------- build everything ---------- */
@@ -152,6 +222,7 @@ void build_ui() {
   lv_disp_set_theme(disp, th);
 
   lv_obj_t *tv = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 50);
+  tabview = tv;
   tab_home = lv_tabview_add_tab(tv, LV_SYMBOL_HOME);  // start page
   tab_power = lv_tabview_add_tab(tv, "Power");
   tab_battery = lv_tabview_add_tab(tv, "Battery");
@@ -177,6 +248,8 @@ void build_ui() {
   lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
   lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_USER_1, hex_kb_map, hex_kb_ctrl);
 
+  ui_update_tabs();  // hide the tabs of features that are switched off
+
   build_saver();  // must come after the main screen is complete
 
   lv_timer_create(clock_timer_cb, 500, NULL);
@@ -187,4 +260,5 @@ void build_ui() {
   lv_timer_create(battery_timer_cb, 1000, NULL);
   lv_timer_create(shelly_timer_cb, 1000, NULL);
   lv_timer_create(saver_timer_cb, 500, NULL);
+  lv_timer_create(history_timer_cb, 5000, NULL);
 }

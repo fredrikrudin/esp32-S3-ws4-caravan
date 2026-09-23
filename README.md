@@ -11,19 +11,19 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | Tab | What it shows |
 |---|---|
 | **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
-| **Power** | Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
+| **Power** | Tap any tile (or the History button) for bar charts of the last 24 hours and 30 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
 | **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
 | **Shelly** | Up to 4 Shelly plugs/switches over Bluetooth (BLE RPC): on/off and power. Off by default; pair them under Settings |
-| **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Relays can be set to "hold to switch" (orange while held) so a bump can't switch them |
+| **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Each relay is an Off | On segmented control in the Victron switch-pane style, so a stray touch can't toggle anything |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
 | **⚙ Settings** | WiFi, weather location, RuuviTags, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
 
-A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
 
-The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic) and the matching tab says so.
+The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
-Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
+Under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
 After 30 seconds without touch, a screen saver shows a dim clock and the battery state of charge (bar, percentage and a charging symbol), and lowers the backlight. A tap wakes it.
 
@@ -39,11 +39,11 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 #define SAVER_LOW_SOC 20          // below this % the bar turns red
 ```
 
-A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
 
-The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic) and the matching tab says so.
+The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
-Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
+Under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
@@ -69,6 +69,8 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `esp32-S3-ws4-caravan.ino` | `setup()` and `loop()` |
 | `app.h` | Configuration, data types, shared state, module functions |
 | `state.cpp` | Shared state, loading settings, small helpers |
+| `sdlog.cpp` | Logging to Serial, to a memory buffer (web `/log`) and to the TF card |
+| `datalog.cpp` | Measurements as CSV, settings backup and restore |
 | `board.cpp` | Display, touch, IO expander, LVGL driver, backlight |
 | `net.cpp` | Network task: WiFi, NTP, weather, all flash writes |
 | `web.cpp` | Web page and JSON with battery, Victron and relay status |
@@ -81,6 +83,8 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `ui_common.cpp` | Tabs, keyboard, widget helpers, timers |
 | `ui_home.cpp` | Home tab (start page) |
 | `ui_power.cpp` | Power tab |
+| `history.cpp` | Energy history: hourly and daily totals |
+| `ui_history.cpp` | History screen (bar chart, opened from the Power tab) |
 | `ui_battery.cpp` | Battery tab (experimental) |
 | `ui_relays.cpp` | Relays tab + relay and I2C settings |
 | `ui_shelly.cpp` | Shelly tab + Shelly pairing settings |
@@ -115,6 +119,17 @@ Optional, in `lv_conf.h`:
   #define LV_MEM_POOL_ALLOC ps_malloc
   ```
 
+## Logging
+
+Diagnostics (Bluetooth frames, connections, errors) go to the Serial Monitor and to a
+24 kB buffer in PSRAM that you can read in a browser at `/log` without attaching a computer.
+Switch on **Settings → SD card** to also append everything to `/caravan.log` on the TF card
+(SDMMC 1-bit mode: GPIO2 clock, GPIO1 command, GPIO4 data). The file is flushed every 5 seconds. The same section has Mount, Eject, New log and Delete old logs, plus card type and free space. Log files can be listed and downloaded in the browser at `/files`.
+
+**Measurements as CSV:** switch on "Log measurements" to append a line to `/data.csv` every 1, 5, 15 or 60 minutes: time, SOC, battery voltage/current/power, solar power and yield, the three RuuviTag temperatures, outside temperature, relays on and Shelly power. Download it from `/files` and open it in a spreadsheet.
+
+**Settings backup:** "Back up settings" writes everything to `/settings.json` on the card, including WiFi and Victron encryption keys, so keep the card safe. "Restore" reads it back and restarts the board, which is the quick way back after an accidental flash erase.
+
 ## Hardware notes
 
 - **Backlight** PWM comes from the CH32V003 and is inverted on this board (0 = full brightness, 255 = off). This is handled in `set_backlight()`.
@@ -134,4 +149,4 @@ Optional, in `lv_conf.h`:
 | Victron device shows "No signal" | Out of range, or Instant readout switched off |
 | Relays show "No answer from PCF8574" | Wrong address (run the I2C scan), wiring, or power |
 | Relays switch the wrong way | Toggle *Active low* in Settings |
-| Image shifted a few pixels down | RGB panel lost sync during heavy WiFi/flash activity. Press reset |
+| Image shifted down (tab bar too low) | The RGB panel lost sync, usually at startup. Press reset. The pixel clock is set to 12 MHz in `board.cpp` to reduce it; bounce buffers would fix it properly but need a newer GFX Library for Arduino |

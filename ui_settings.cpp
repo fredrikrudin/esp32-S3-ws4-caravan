@@ -5,7 +5,7 @@
 lv_obj_t *lbl_wifi_status, *dd_ssid, *lbl_loc;  // also updated by net_poll_cb()
 
 static lv_obj_t *ta_pass, *ta_city;
-static lv_obj_t *ta_webpass, *lbl_web;
+static lv_obj_t *ta_webpass, *ta_webname, *lbl_web;
 static lv_obj_t *dd_ruuvi, *ruuvi_list, *lbl_ruuvi_msg;
 static lv_obj_t *ruuvi_editor, *lbl_ruuvi_edit_title, *ta_rname;
 static lv_obj_t *ruuvi_list_lbl[MAX_RUUVI];
@@ -13,6 +13,12 @@ static int ruuvi_edit_idx = -1;  // slot being edited, -1 = new tag
 static char ruuvi_edit_mac[18];
 static lv_obj_t *sl_bl, *lbl_bl, *sl_bl_saver, *lbl_bl_saver;
 static lv_obj_t *lbl_scan;
+static lv_obj_t *dd_bms;
+static lv_obj_t *lbl_sdlog, *lbl_csv, *dd_csv;
+static char bms_dd_mac[MAX_BMS_SEEN][18];
+static uint8_t bms_dd_type[MAX_BMS_SEEN];
+static char bms_dd_name[MAX_BMS_SEEN][32];
+static int bms_dd_count = 0;
 static char dd_addr[MAX_TAGS][18];  // MAC for each row of the Ruuvi "Add" list
 static int dd_count = 0;
 
@@ -45,13 +51,20 @@ static void update_web_label() {
   LOCK();
   has_pass = g.web_pass[0] != 0;
   UNLOCK();
-  lv_label_set_text_fmt(lbl_web, "Open http://%s.local/ on the same WiFi.\n%s", MDNS_NAME,
-                        has_pass ? "Password required." : "No password: anyone on the WiFi can view the page.");
+  char name[24];
+  LOCK();
+  strlcpy(name, g.web_name, sizeof(name));
+  UNLOCK();
+  lv_label_set_text_fmt(lbl_web, "\"%s\" at http://%s.local/ on the same WiFi.\n%s%s", name, MDNS_NAME,
+                        has_pass ? "Password required." : "No password: anyone on the WiFi can view the page.",
+                        feat_remote ? " Switching allowed." : "");
 }
 
 static void webpass_save_now() {
   LOCK();
   strlcpy(g.web_pass, lv_textarea_get_text(ta_webpass), sizeof(g.web_pass));
+  const char *n = lv_textarea_get_text(ta_webname);
+  strlcpy(g.web_name, n[0] ? n : "Waveshare", sizeof(g.web_name));
   UNLOCK();
   cmd_save_web = true;
   web_password_changed();  // logs everyone out, so the new password applies at once
@@ -61,6 +74,12 @@ static void webpass_save_now() {
 
 static void webpass_save_cb(lv_event_t *e) {
   webpass_save_now();
+}
+
+static void remote_cb(lv_event_t *e) {
+  feat_remote = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  update_web_label();
 }
 
 /* ---------- Location ---------- */
@@ -279,15 +298,163 @@ static void scan_slider_cb(lv_event_t *e) {
   }
 }
 
+/* ---------- Battery: choose the BMS device ---------- */
+static bool contains_nocase(const char *name, const char *hint) {
+  size_t hl = strlen(hint);
+  for (const char *p = name; *p; p++)
+    if (!strncasecmp(p, hint, hl)) return true;
+  return false;
+}
+
+/* names that are probably a battery go to the top of the list */
+static bool likely_battery(const char *name) {
+  const char *hints[] = { "BWOB", "ECO", "JBD", "DCHOUSE", "BMC", "SP0", "DP0", "xiaoxiang", "BMS" };
+  for (const char *h : hints)
+    if (contains_nocase(name, h)) return true;
+  return false;
+}
+
+static void bms_connect_cb(lv_event_t *e) {
+  uint16_t i = lv_dropdown_get_selected(dd_bms);
+  if (i >= bms_dd_count) return;  // "Searching..."
+  bms_connect_to(bms_dd_mac[i], bms_dd_type[i], bms_dd_name[i]);
+}
+
+/* Called once per second from the Battery tab with the BLE devices in range */
+void bms_settings_refresh(const BmsSeen *seen, int n, uint32_t now) {
+  if (lv_dropdown_is_open(dd_bms)) return;
+
+  char cur[18] = "";
+  uint16_t ci = lv_dropdown_get_selected(dd_bms);
+  if (ci < bms_dd_count) strlcpy(cur, bms_dd_mac[ci], sizeof(cur));
+  else {
+    LOCK();
+    strlcpy(cur, bms_cfg.mac, sizeof(cur));
+    UNLOCK();
+  }
+
+  static char last_opts[MAX_BMS_SEEN * 40] = "";
+  char opts[MAX_BMS_SEEN * 40] = "";
+  int count = 0, cur_idx = 0;
+  for (int pass = 0; pass < 2; pass++) {  // likely batteries first
+    for (int i = 0; i < n; i++) {
+      if (now - seen[i].last_seen > 120000UL) continue;
+      if (likely_battery(seen[i].name) != (pass == 0)) continue;
+      char line[40];
+      snprintf(line, sizeof(line), "%s%s", count ? "\n" : "", seen[i].name);
+      strlcat(opts, line, sizeof(opts));
+      strlcpy(bms_dd_mac[count], seen[i].mac, sizeof(bms_dd_mac[count]));
+      strlcpy(bms_dd_name[count], seen[i].name, sizeof(bms_dd_name[count]));
+      bms_dd_type[count] = seen[i].addr_type;
+      if (!strcmp(seen[i].mac, cur)) cur_idx = count;
+      count++;
+    }
+  }
+  bms_dd_count = count;
+  if (!count) strcpy(opts, "Searching...");
+  if (strcmp(opts, last_opts)) {
+    strlcpy(last_opts, opts, sizeof(last_opts));
+    lv_dropdown_set_options(dd_bms, opts);
+    lv_dropdown_set_selected(dd_bms, cur_idx);
+  }
+}
+
+/* ---------- SD card and logging ---------- */
+static void update_sdlog_label() {
+  char info[64];
+  sd_card_info(info, sizeof(info));
+  if (sd_log_ok())
+    lv_label_set_text_fmt(lbl_sdlog, "%s\n%s, %u kB", info, sd_log_name(), (unsigned)(sd_log_size() / 1024));
+  else
+    lv_label_set_text_fmt(lbl_sdlog, "%s\n%s", sd_log_status(),
+                          feat_sdlog ? "Insert a card and tap Mount." : "The log is kept in memory and readable at /log.");
+}
+
+static void sd_mount_cb(lv_event_t *e) {
+  if (sd_log_ok()) {
+    lv_label_set_text(lbl_sdlog, "Already mounted");
+  } else if (sd_log_mount()) {
+    logf("TF card mounted");
+  }
+  update_sdlog_label();
+}
+
+static void sd_eject_cb(lv_event_t *e) {
+  sd_log_unmount();  // flushes and closes the file first
+  update_sdlog_label();
+}
+
+static void sd_newfile_cb(lv_event_t *e) {
+  if (sd_log_new_file()) logf("New log file started");
+  update_sdlog_label();
+}
+
+static void sd_delete_cb(lv_event_t *e) {
+  int n = sd_log_delete_old();
+  lv_label_set_text_fmt(lbl_sdlog, "Deleted %d old log file(s)", n);
+}
+
+static void sdlog_cb(lv_event_t *e) {
+  feat_sdlog = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  if (feat_sdlog) {
+    sd_log_mount();
+    logf("Logging to the TF card switched on");
+  } else {
+    sd_log_unmount();
+  }
+  update_sdlog_label();
+}
+
+static void sd_refresh_cb(lv_event_t *e) {
+  update_sdlog_label();
+}
+
+static void update_csv_label() {
+  lv_label_set_text_fmt(lbl_csv, "%s", feat_csv ? csv_status() : "Measurements are not being logged.");
+}
+
+static void csv_cb(lv_event_t *e) {
+  feat_csv = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  if (feat_csv) sd_log_mount();
+  update_csv_label();
+}
+
+static void csv_interval_cb(lv_event_t *e) {
+  const uint8_t mins[] = { 1, 5, 15, 60 };
+  csv_interval_min = mins[lv_dropdown_get_selected(dd_csv)];
+  cmd_save_feat = true;
+}
+
+static void backup_cb(lv_event_t *e) {
+  if (!sd_log_ok()) sd_log_mount();
+  lv_label_set_text(lbl_csv, settings_backup() ? "Settings saved to /settings.json" : "Backup failed - is a card inserted?");
+}
+
+static void restore_cb(lv_event_t *e) {
+  if (!sd_log_ok()) sd_log_mount();
+  if (settings_restore()) {
+    lv_label_set_text(lbl_csv, "Settings restored - restarting...");
+    lv_refr_now(NULL);
+    delay(1500);
+    ESP.restart();
+  } else {
+    lv_label_set_text(lbl_csv, "Restore failed - no /settings.json on the card?");
+  }
+}
+
 /* ---------- feature switches ---------- */
 static void feat_ruuvi_cb(lv_event_t *e) {
   feat_ruuvi = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
   cmd_save_feat = true;
+  ui_update_tabs();
 }
 
 static void feat_bms_cb(lv_event_t *e) {
   feat_bms = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
   cmd_save_feat = true;
+  ui_update_tabs();
 }
 
 /* ---------- build ---------- */
@@ -322,6 +489,15 @@ void build_settings_tab() {
   lbl_web = lv_label_create(sec);
   lv_obj_set_width(lbl_web, LV_PCT(100));
   lv_label_set_long_mode(lbl_web, LV_LABEL_LONG_WRAP);
+
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  ta_webname = make_ta(row, "Name of the page", webpass_save_now);
+  lv_textarea_set_max_length(ta_webname, 23);
+  lv_obj_set_flex_grow(ta_webname, 1);
+  lv_textarea_set_text(ta_webname, g.web_name);
+
+  make_switch_row(sec, "Remote admin: switch relays and Shelly from the web page", feat_remote, remote_cb);
+
   row = make_row(sec, LV_FLEX_ALIGN_START);
   ta_webpass = make_ta(row, "Password (empty = no login)", webpass_save_now);
   lv_textarea_set_password_mode(ta_webpass, true);
@@ -389,7 +565,13 @@ void build_settings_tab() {
   lv_obj_t *hint = make_grey_label(sec);
   lv_obj_set_width(hint, LV_PCT(100));
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(hint, "Choose the battery on the Battery tab. Close the battery's phone app first: it accepts only one connection.");
+  lv_label_set_text(hint, "Close the battery's phone app first: it accepts only one connection. Likely batteries are listed first.");
+
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  dd_bms = lv_dropdown_create(row);
+  lv_obj_set_flex_grow(dd_bms, 1);
+  lv_dropdown_set_options(dd_bms, "Searching...");
+  make_btn(row, LV_SYMBOL_BLUETOOTH " Connect", bms_connect_cb);
 
   /* ---- sections in their own files ---- */
   settings_shelly(tab_settings);
@@ -411,4 +593,49 @@ void build_settings_tab() {
   update_scan_label();
 
   settings_i2c(tab_settings);
+
+  /* ---- SD card ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_SD_CARD "  SD card");
+  make_switch_row(sec, "Write the log to the card", feat_sdlog, sdlog_cb);
+
+  lbl_sdlog = lv_label_create(sec);
+  lv_obj_set_width(lbl_sdlog, LV_PCT(100));
+  lv_label_set_long_mode(lbl_sdlog, LV_LABEL_LONG_WRAP);
+
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_SD_CARD " Mount", sd_mount_cb);
+  make_btn(row, LV_SYMBOL_EJECT " Eject", sd_eject_cb);
+  make_btn(row, LV_SYMBOL_REFRESH, sd_refresh_cb);
+
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_FILE " New log", sd_newfile_cb);
+  lv_obj_t *del_logs = make_btn(row, LV_SYMBOL_TRASH " Delete old logs", sd_delete_cb);
+  lv_obj_set_style_bg_color(del_logs, lv_palette_main(LV_PALETTE_RED), 0);
+
+  /* measurements as CSV */
+  make_switch_row(sec, "Log measurements to /data.csv", feat_csv, csv_cb);
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  lv_label_set_text(lv_label_create(row), "Every");
+  dd_csv = lv_dropdown_create(row);
+  lv_dropdown_set_options_static(dd_csv, "1 min\n5 min\n15 min\n60 min");
+  lv_dropdown_set_selected(dd_csv, csv_interval_min == 1 ? 0 : csv_interval_min == 5 ? 1
+                                                            : csv_interval_min == 15  ? 2
+                                                                                      : 3);
+  lv_obj_add_event_cb(dd_csv, csv_interval_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+  lbl_csv = lv_label_create(sec);
+  lv_obj_set_width(lbl_csv, LV_PCT(100));
+  lv_label_set_long_mode(lbl_csv, LV_LABEL_LONG_WRAP);
+  update_csv_label();
+
+  /* settings backup */
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_SAVE " Back up settings", backup_cb);
+  make_btn(row, LV_SYMBOL_UPLOAD " Restore", restore_cb);
+
+  lv_obj_t *sd_hint = make_grey_label(sec);
+  lv_obj_set_width(sd_hint, LV_PCT(100));
+  lv_label_set_long_mode(sd_hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(sd_hint, "Eject before pulling the card out. Files can be downloaded from the web page under /files. The backup contains WiFi and Victron keys, so keep the card safe. Restoring restarts the board.");
+  update_sdlog_label();
 }

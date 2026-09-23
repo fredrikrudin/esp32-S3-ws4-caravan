@@ -15,7 +15,6 @@ RelayCfg relay_cfg = { 0, true, 8, {} };
 BmsCfg bms_cfg = { "", 0, "" };
 ShellyCfg shelly_cfg[MAX_SHELLY];
 uint8_t relay_state = 0;
-uint8_t relay_hold_mask = 0;
 bool pcf_ok = false;
 
 volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
@@ -25,6 +24,10 @@ volatile bool scan_restart = false;
 
 volatile bool feat_ruuvi = true, feat_relays = true, feat_bms = ENABLE_BMS;
 volatile bool feat_shelly = false;  // Shelly over Bluetooth is off until switched on
+volatile bool feat_remote = false;  // switching from the web page is off until switched on
+volatile bool feat_sdlog = false;   // logging to the TF card is off until switched on
+volatile bool feat_csv = false;     // measurement logging is off until switched on
+volatile uint8_t csv_interval_min = 5;
 volatile uint8_t scan_interval_s = 1;
 volatile uint8_t bl_normal = 100;
 volatile uint8_t bl_saver = 10;
@@ -43,6 +46,8 @@ void load_cfg() {
   prefs.getString("city", g.city, sizeof(g.city));
   prefs.getString("place", g.place, sizeof(g.place));
   prefs.getString("webpass", g.web_pass, sizeof(g.web_pass));
+  prefs.getString("webname", g.web_name, sizeof(g.web_name));
+  if (!g.web_name[0]) strlcpy(g.web_name, "Waveshare", sizeof(g.web_name));
   g.has_loc = prefs.getBool("hasloc", false);
   g.lat = prefs.getFloat("lat", 0);
   g.lon = prefs.getFloat("lon", 0);
@@ -56,6 +61,10 @@ void load_cfg() {
   feat_relays = feat & 0x02;
   feat_bms = feat & 0x04;
   feat_shelly = feat & 0x08;
+  feat_remote = feat & 0x10;
+  feat_sdlog = feat & 0x20;
+  feat_csv = feat & 0x40;
+  csv_interval_min = constrain(prefs.getUChar("csvmin", 5), 1, 60);
 
   memset(shelly_cfg, 0, sizeof(shelly_cfg));
   if (prefs.getBytesLength("shelly") == sizeof(shelly_cfg)) prefs.getBytes("shelly", shelly_cfg, sizeof(shelly_cfg));
@@ -66,7 +75,6 @@ void load_cfg() {
 
   if (prefs.getBytesLength("relay") == sizeof(relay_cfg)) prefs.getBytes("relay", &relay_cfg, sizeof(relay_cfg));
   relay_cfg.count = constrain(relay_cfg.count, 1, MAX_RELAYS);
-  relay_hold_mask = prefs.getUChar("relayhold", 0);
   for (int i = 0; i < MAX_RELAYS; i++)
     if (!relay_cfg.names[i][0]) snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), "Relay %d", i + 1);
 

@@ -66,7 +66,8 @@ LV_FONT_DECLARE(font_clock_96)
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
-#define RELAY_HOLD_MS 1000    // "hold to switch" relays: how long to hold the button
+#define HIST_HOURS 24         // hourly energy buckets kept
+#define HIST_DAYS 30          // daily energy buckets kept
 #define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery and Shelly pages
 #define MAX_SHELLY 4          // Shelly devices that can be paired
 #define BMS_MAX_CELLS 16
@@ -104,7 +105,8 @@ struct Shared {
   bool has_loc = false;
   int32_t utc_offset = 0;  // from Open-Meteo, follows DST
   bool offset_valid = false;
-  char web_pass[33] = "";  // web page password, "" = no login
+  char web_pass[33] = "";          // web page password, "" = no login
+  char web_name[24] = "Waveshare";  // title of the web page
   // results for the UI
   char wifi_status[96] = "Not connected";
   bool status_changed = true;
@@ -183,6 +185,13 @@ struct ShellyData {
   char status[64];
 };
 
+/* One period of energy history (an hour or a day) */
+struct HistBucket {
+  float solar_wh;
+  float load_wh;
+  float soc;  // state of charge at the end of the period, NAN if unknown
+};
+
 /* Relays on an external PCF8574, saved to flash as one block */
 struct RelayCfg {
   uint8_t addr;     // 0 = not used, else 0x20-0x27 / 0x38-0x3F
@@ -243,8 +252,7 @@ extern VicSeen vic_seen[MAX_VIC_SEEN];
 extern BmsCfg bms_cfg;
 extern ShellyCfg shelly_cfg[MAX_SHELLY];
 extern RelayCfg relay_cfg;
-extern uint8_t relay_state;      // bit set = relay ON
-extern uint8_t relay_hold_mask;  // bit set = relay needs "hold to switch"
+extern uint8_t relay_state;  // bit set = relay ON
 extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
@@ -257,6 +265,10 @@ extern volatile bool feat_ruuvi;   // Temp tab: RuuviTag reading
 extern volatile bool feat_relays;  // Relays tab: PCF8574
 extern volatile bool feat_bms;     // Battery tab: BMS connection
 extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth (default off)
+extern volatile bool feat_remote;  // web page may switch relays and Shelly (default off)
+extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
+extern volatile bool feat_csv;     // write measurements to /data.csv (default off)
+extern volatile uint8_t csv_interval_min;  // minutes between CSV lines
 
 extern volatile uint8_t scan_interval_s;  // BLE scan interval, 1-10 s (1 = continuous)
 extern volatile uint8_t bl_normal;        // backlight %, normal use
@@ -315,6 +327,38 @@ void bms_get(BmsData *out);                      // copy of the current data
 int bms_get_seen(BmsSeen *out, int max);         // copy of the device list
 const char *bms_protection_text(uint16_t bits);  // NULL = no protection active
 
+/* sdlog.cpp (log to Serial, to a ring buffer readable at /log, and to the TF card) */
+void log_begin();
+void logf(const char *fmt, ...);
+void log_dump(String &out);
+bool sd_log_mount();
+void sd_log_unmount();
+bool sd_log_ok();
+const char *sd_log_status();
+size_t sd_log_size();
+const char *sd_log_name();
+void sd_card_info(char *out, size_t n);
+bool sd_log_new_file();
+int sd_log_delete_old();
+void sd_list_files(String &out);
+
+/* history.cpp (energy history behind the Power tab's History screen) */
+void history_begin();
+void history_service();  // call from loop()
+void history_get(HistBucket **hour_arr, HistBucket **day_arr);
+void history_totals(bool daily, float *solar_kwh, float *load_kwh);
+
+/* ui_history.cpp */
+void build_history_screen();
+void show_history_screen();
+void history_timer_cb(lv_timer_t *t);
+
+/* datalog.cpp (measurements as CSV, settings backup/restore) */
+void csv_service();  // call from loop()
+const char *csv_status();
+bool settings_backup();
+bool settings_restore();
+
 /* shelly.cpp (Shelly devices over BLE RPC; off until switched on in Settings) */
 void shelly_start();
 void shelly_get(int idx, ShellyData *out);
@@ -335,6 +379,7 @@ int i2c_scan(char *out, size_t len);  // returns number of devices found
 /* ui_common.cpp */
 extern lv_obj_t *tab_home, *tab_power, *tab_battery, *tab_relays, *tab_shelly, *tab_temp, *tab_weather, *tab_settings, *kb;
 void build_ui();
+void ui_update_tabs();  // hides the tabs of switched-off features
 void kb_show(lv_obj_t *ta);
 void kb_hide();
 lv_obj_t *make_row(lv_obj_t *parent, lv_flex_align_t main_align);
@@ -346,6 +391,8 @@ lv_obj_t *make_switch_row(lv_obj_t *parent, const char *text, bool on, lv_event_
 lv_obj_t *make_grey_label(lv_obj_t *parent);
 lv_obj_t *make_slider(lv_obj_t *parent, int min, int max, int val, lv_event_cb_t cb);
 void set_label(lv_obj_t *l, const char *txt);  // only redraws when the text changes
+lv_obj_t *make_segment(lv_obj_t *parent, lv_event_cb_t cb, void *user_data);  // Off | On control
+void set_segment(lv_obj_t *seg, bool on);
 
 /* ui_home.cpp */
 void build_home_tab();
@@ -384,6 +431,7 @@ void net_poll_cb(lv_timer_t *t);
 /* ui_settings.cpp */
 extern lv_obj_t *lbl_wifi_status, *dd_ssid, *lbl_loc;
 void build_settings_tab();
+void bms_settings_refresh(const BmsSeen *seen, int n, uint32_t now);
 void ruuvi_settings_refresh(const RuuviTag *copy, uint32_t now);
 
 /* ui_victron_settings.cpp */

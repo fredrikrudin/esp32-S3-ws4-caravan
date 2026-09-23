@@ -50,7 +50,7 @@ static void set_status(const char *fmt, ...) {
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   strlcpy(bms.status, buf, sizeof(bms.status));
   xSemaphoreGive(bms_mtx);
-  USBSerial.printf("BMS: %s\n", buf);
+  logf("BMS: %s", buf);
 }
 
 static void hex_line(const uint8_t *d, size_t n, char *out, size_t out_len) {
@@ -158,7 +158,7 @@ static uint32_t le32(const uint8_t *p) {
 }
 
 static void ew_decode(uint8_t cmd, const uint8_t *p, size_t n) {
-  USBSerial.printf("BMS EW frame cmd 0x%02X, %u bytes payload\n", cmd, (unsigned)n);
+  logf("BMS EW frame cmd 0x%02X, %u bytes payload", cmd, (unsigned)n);
   if (cmd == 0x21 && n >= 18) {
     xSemaphoreTake(bms_mtx, portMAX_DELAY);
     bms.volt = le16(p) / 1000.0f;
@@ -292,15 +292,17 @@ static void jbd_request(uint8_t cmd) {
 static void notify_cb(NimBLERemoteCharacteristic *chr, uint8_t *data, size_t len, bool is_notify) {
   char hex[100];
   hex_line(data, len, hex, sizeof(hex));
-  USBSerial.printf("BMS notify %s (%u bytes): %s\n", chr->getUUID().toString().c_str(), (unsigned)len, hex);
+  logf("BMS notify %s (%u bytes): %s", chr->getUUID().toString().c_str(), (unsigned)len, hex);
+  if (len && data[0] != 0xAA && data[0] != 0xDD) logf("  (start byte is neither AA nor DD - unknown frame)");
 
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   strlcpy(bms.last_frame, hex, sizeof(bms.last_frame));
   xSemaphoreGive(bms_mtx);
 
-  /* each parser checks its own start byte, so only real frames are decoded */
-  if (proto == PROTO_EW) ew_feed(data, len);
-  else jbd_feed(data, len);
+  /* feed both: each parser checks its own start byte and checksum,
+     so a frame only ever decodes in the one it belongs to */
+  ew_feed(data, len);
+  jbd_feed(data, len);
 }
 
 /* ---------- connection ---------- */
@@ -339,16 +341,16 @@ static bool do_connect() {
 
   /* Diagnostics: list everything and subscribe to all notifications */
   char services[200] = "";
-  USBSerial.printf("BMS: connected to %s (%s). GATT services:\n", cfg.name, cfg.mac);
+  logf("BMS: connected to %s (%s). GATT services:", cfg.name, cfg.mac);
   for (NimBLERemoteService *svc : client->getServices(true)) {
     std::string su = svc->getUUID().toString();
-    USBSerial.printf("  service %s\n", su.c_str());
+    logf("  service %s", su.c_str());
     if (strlen(services) + su.length() + 2 < sizeof(services)) {
       if (services[0]) strlcat(services, " ", sizeof(services));
       strlcat(services, su.c_str(), sizeof(services));
     }
     for (NimBLERemoteCharacteristic *chr : svc->getCharacteristics(true)) {
-      USBSerial.printf("    char %s%s%s%s%s\n", chr->getUUID().toString().c_str(),
+      logf("    char %s%s%s%s%s", chr->getUUID().toString().c_str(),
                        chr->canRead() ? " read" : "", chr->canWrite() ? " write" : "",
                        chr->canWriteNoResponse() ? " write-no-resp" : "",
                        (chr->canNotify() || chr->canIndicate()) ? " notify" : "");
@@ -365,15 +367,19 @@ static bool do_connect() {
       }
     }
   }
-  /* ECO-WORTHY / BWOB: service 0x0001 with write 0x0002 and notify 0x0003 */
-  NimBLERemoteService *ew = client->getService(NimBLEUUID((uint16_t)0x0001));
-  if (ew) ew_write = ew->getCharacteristic(NimBLEUUID((uint16_t)0x0002));
-  if (ew_write) {
-    proto = PROTO_EW;
-    USBSerial.println("BMS: ECO-WORTHY service found (0x0001/0x0002)");
-  } else {
-    USBSerial.printf("BMS: %d writable characteristics to try (JBD)\n", write_chr_count);
+  /* ECO-WORTHY / BWOB: write characteristic 0x0002 next to a notify 0x0003,
+     normally in service 0x0001 - but look in every service, since the IDs vary */
+  for (NimBLERemoteService *svc : client->getServices()) {
+    NimBLERemoteCharacteristic *w = svc->getCharacteristic(NimBLEUUID((uint16_t)0x0002));
+    NimBLERemoteCharacteristic *nfy = svc->getCharacteristic(NimBLEUUID((uint16_t)0x0003));
+    if (w && nfy && (w->canWrite() || w->canWriteNoResponse())) {
+      ew_write = w;
+      proto = PROTO_EW;
+      USBSerial.printf("BMS: ECO-WORTHY characteristics found in service %s\n", svc->getUUID().toString().c_str());
+      break;
+    }
   }
+  if (!ew_write) USBSerial.printf("BMS: %d writable characteristics to try (both protocols)\n", write_chr_count);
 
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   bms.connected = true;
@@ -438,10 +444,21 @@ static void bms_task(void *arg) {
         ew_write->writeValue(EW_CMD21, sizeof(EW_CMD21), resp);  // voltage, SOC, capacity
         vTaskDelay(pdMS_TO_TICKS(500));
         ew_write->writeValue(EW_CMD22, sizeof(EW_CMD22), resp);  // cell voltages
-      } else {
-        jbd_request(0x03);  // basic info
+      } else if (write_chr_idx < write_chr_count) {
+        /* unknown device: try both protocols on this characteristic */
+        NimBLERemoteCharacteristic *chr = write_chr[write_chr_idx];
+        bool resp = !chr->canWriteNoResponse();
+        jbd_request(0x03);  // JBD basic info
         vTaskDelay(pdMS_TO_TICKS(400));
-        jbd_request(0x04);  // cell voltages
+        jbd_request(0x04);  // JBD cell voltages
+        vTaskDelay(pdMS_TO_TICKS(300));
+        chr->writeValue(EW_INIT, sizeof(EW_INIT), resp);  // ECO-WORTHY wake-up
+        vTaskDelay(pdMS_TO_TICKS(300));
+        chr->writeValue(EW_CMD20, sizeof(EW_CMD20), resp);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        chr->writeValue(EW_CMD21, sizeof(EW_CMD21), resp);
+        vTaskDelay(pdMS_TO_TICKS(400));
+        chr->writeValue(EW_CMD22, sizeof(EW_CMD22), resp);
       }
       next_poll = millis() + (answered ? BMS_POLL_MS : 1500);
 

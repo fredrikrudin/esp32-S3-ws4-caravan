@@ -236,11 +236,11 @@ static void save_pending() {
     copy = relay_cfg;
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
-    prefs.putUChar("relayhold", relay_hold_mask);
   }
   if (cmd_save_feat) {
     cmd_save_feat = false;
-    prefs.putUChar("feat", (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0));
+    prefs.putUChar("feat", (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0));
+    prefs.putUChar("csvmin", csv_interval_min);
   }
   if (cmd_save_shelly) {
     cmd_save_shelly = false;
@@ -257,6 +257,11 @@ static void save_pending() {
     strlcpy(pass, g.web_pass, sizeof(pass));
     UNLOCK();
     prefs.putString("webpass", pass);
+    char name[24];
+    LOCK();
+    strlcpy(name, g.web_name, sizeof(name));
+    UNLOCK();
+    prefs.putString("webname", name);
   }
   if (cmd_save_bms) {
     cmd_save_bms = false;

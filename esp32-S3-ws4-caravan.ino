@@ -15,6 +15,8 @@ void setup() {
   USBSerial.printf("Internal heap at start: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   board_init();  // IO expander, touch, display, LVGL
+  log_begin();   // Serial + ring buffer (+ TF card when switched on)
+  history_begin();
   state_init();
   load_cfg();
   relay_read_back();  // adopt the relays' current state (they keep it across ESP32 restarts)
@@ -40,6 +42,8 @@ void setup() {
 void loop() {
   ble_scan_service();
   web_service();
+  csv_service();
+  history_service();
   lv_timer_handler();
   delay(5);
 }

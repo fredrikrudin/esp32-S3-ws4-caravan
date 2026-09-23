@@ -1,25 +1,17 @@
 /* Relays tab (PCF8574) + Settings sections for the relay board and I2C scan.
-   Relays marked "hold to switch" only toggle after the button is held for
-   RELAY_HOLD_MS; the button is orange while it is being held. */
+   Each relay is an Off | On segmented control, like the Victron switch pane:
+   you press the side you want, so a stray touch can't toggle anything. */
 #include "app.h"
 
 static lv_obj_t *lbl_relay_status, *relay_grid;
-static lv_obj_t *relay_btn[MAX_RELAYS], *relay_lbl[MAX_RELAYS];
+static lv_obj_t *relay_seg[MAX_RELAYS], *relay_name[MAX_RELAYS];
 static lv_obj_t *dd_pcf_addr, *sw_active_low, *dd_relay_count, *dd_relay_pick, *ta_relay_name, *lbl_i2c_scan;
-static lv_obj_t *sw_relay_hold;
-static uint32_t hold_start[MAX_RELAYS];  // millis() when a hold began, 0 = not holding
 
-#define LV_STATE_HOLDING LV_STATE_USER_1  // custom state: button is being held (orange)
-
-/* ---------- Relays tab ---------- */
 static void relay_refresh_ui() {
   for (int i = 0; i < MAX_RELAYS; i++) {
-    if (!relay_btn[i]) continue;
-    bool on = (relay_state >> i) & 1;
-    if (on) lv_obj_add_state(relay_btn[i], LV_STATE_CHECKED);
-    else lv_obj_clear_state(relay_btn[i], LV_STATE_CHECKED);
-    if (hold_start[i]) lv_label_set_text_fmt(relay_lbl[i], "%s\nHold...", relay_cfg.names[i]);
-    else lv_label_set_text_fmt(relay_lbl[i], "%s\n%s", relay_cfg.names[i], on ? "ON" : "OFF");
+    if (!relay_seg[i]) continue;
+    set_label(relay_name[i], relay_cfg.names[i]);
+    set_segment(relay_seg[i], (relay_state >> i) & 1);
   }
   if (!feat_relays) lv_label_set_text(lbl_relay_status, "Relays are switched off.\nSwitch them on under Settings.");
   else if (!relay_cfg.addr) lv_label_set_text(lbl_relay_status, "No relay board set up.\nChoose its I2C address under Settings.");
@@ -27,66 +19,35 @@ static void relay_refresh_ui() {
   else lv_label_set_text_fmt(lbl_relay_status, "PCF8574 at 0x%02X", relay_cfg.addr);
 }
 
-static void relay_toggle(int i) {
-  uint8_t old = relay_state;
-  relay_state ^= (1 << i);
-  if (!relay_apply()) relay_state = old;  // write failed: keep showing the real state
-}
-
-static void hold_end(int i) {
-  hold_start[i] = 0;
-  if (relay_btn[i]) lv_obj_clear_state(relay_btn[i], LV_STATE_HOLDING);
-}
-
-static void relay_btn_cb(lv_event_t *e) {
+static void relay_seg_cb(lv_event_t *e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
-  lv_event_code_t code = lv_event_get_code(e);
-  bool hold = (relay_hold_mask >> i) & 1;
-
-  if (code == LV_EVENT_CLICKED && !hold) {
-    relay_toggle(i);  // normal relay: a tap switches it
-    relay_refresh_ui();
-  } else if (code == LV_EVENT_PRESSED && hold) {
-    hold_start[i] = millis() | 1;  // start holding: orange until the time is up
-    lv_obj_add_state(relay_btn[i], LV_STATE_HOLDING);
-    relay_refresh_ui();
-  } else if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && hold_start[i]) {
-    hold_end(i);  // let go too early: nothing happens
-    relay_refresh_ui();
-  }
-}
-
-/* Checks the buttons being held; switches the relay when the time is up */
-static void relay_hold_timer_cb(lv_timer_t *t) {
-  for (int i = 0; i < MAX_RELAYS; i++) {
-    if (!hold_start[i] || millis() - hold_start[i] < RELAY_HOLD_MS) continue;
-    hold_end(i);
-    relay_toggle(i);
-    relay_refresh_ui();
-  }
+  bool want_on = (lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1);
+  uint8_t old = relay_state;
+  if (want_on) relay_state |= (1 << i);
+  else relay_state &= ~(1 << i);
+  if (!relay_apply()) relay_state = old;  // write failed: show the real state again
+  relay_refresh_ui();
 }
 
 static void relay_rebuild_tab() {
   lv_obj_clean(relay_grid);
-  for (int i = 0; i < MAX_RELAYS; i++) {
-    relay_btn[i] = relay_lbl[i] = NULL;
-    hold_start[i] = 0;
-  }
+  for (int i = 0; i < MAX_RELAYS; i++) relay_seg[i] = relay_name[i] = NULL;
   if (feat_relays && relay_cfg.addr) {
     for (int i = 0; i < relay_cfg.count; i++) {
-      lv_obj_t *b = lv_btn_create(relay_grid);
-      lv_obj_set_size(b, LV_PCT(48), 78);
-      lv_obj_set_style_bg_color(b, lv_color_hex(0x3A3F44), 0);
-      lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_GREEN), LV_STATE_CHECKED);
-      lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_ORANGE), LV_STATE_HOLDING);
-      lv_obj_add_event_cb(b, relay_btn_cb, LV_EVENT_ALL, (void *)(intptr_t)i);
-      lv_obj_t *l = lv_label_create(b);
-      lv_obj_set_width(l, LV_PCT(100));
-      lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
-      lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
-      lv_obj_center(l);
-      relay_btn[i] = b;
-      relay_lbl[i] = l;
+      lv_obj_t *cell = lv_obj_create(relay_grid);
+      lv_obj_remove_style_all(cell);
+      lv_obj_set_width(cell, LV_PCT(48));
+      lv_obj_set_height(cell, LV_SIZE_CONTENT);
+      lv_obj_set_flex_flow(cell, LV_FLEX_FLOW_COLUMN);
+      lv_obj_set_style_pad_row(cell, 4, 0);
+      lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+
+      relay_name[i] = lv_label_create(cell);
+      lv_obj_set_width(relay_name[i], LV_PCT(100));
+      lv_label_set_long_mode(relay_name[i], LV_LABEL_LONG_DOT);
+      lv_label_set_text(relay_name[i], relay_cfg.names[i]);
+
+      relay_seg[i] = make_segment(cell, relay_seg_cb, (void *)(intptr_t)i);
     }
   }
   relay_refresh_ui();
@@ -94,7 +55,7 @@ static void relay_rebuild_tab() {
 
 void build_relays_tab() {
   lv_obj_set_flex_flow(tab_relays, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(tab_relays, 10, 0);
+  lv_obj_set_style_pad_row(tab_relays, 12, 0);
   lbl_relay_status = make_grey_label(tab_relays);
 
   relay_grid = lv_obj_create(tab_relays);
@@ -102,10 +63,9 @@ void build_relays_tab() {
   lv_obj_set_size(relay_grid, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(relay_grid, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_flex_align(relay_grid, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-  lv_obj_set_style_pad_row(relay_grid, 10, 0);
+  lv_obj_set_style_pad_row(relay_grid, 14, 0);
   lv_obj_clear_flag(relay_grid, LV_OBJ_FLAG_SCROLLABLE);
   relay_rebuild_tab();
-  lv_timer_create(relay_hold_timer_cb, 50, NULL);
 }
 
 /* Redraws the Relays tab after a settings change */
@@ -118,6 +78,7 @@ static void relays_enable_cb(lv_event_t *e) {
   cmd_save_feat = true;
   if (feat_relays) relay_read_back();  // pick up the relays' current state again
   relay_rebuild_tab();
+  ui_update_tabs();
 }
 
 /* ---------- Settings: relay board ---------- */
@@ -166,24 +127,8 @@ static void relay_count_cb(lv_event_t *e) {
   relay_cfg_changed();
 }
 
-static void update_hold_switch() {
-  int i = lv_dropdown_get_selected(dd_relay_pick);
-  if ((relay_hold_mask >> i) & 1) lv_obj_add_state(sw_relay_hold, LV_STATE_CHECKED);
-  else lv_obj_clear_state(sw_relay_hold, LV_STATE_CHECKED);
-}
-
 static void relay_pick_cb(lv_event_t *e) {
   lv_textarea_set_text(ta_relay_name, relay_cfg.names[lv_dropdown_get_selected(dd_relay_pick)]);
-  update_hold_switch();
-}
-
-static void relay_hold_cb(lv_event_t *e) {
-  int i = lv_dropdown_get_selected(dd_relay_pick);
-  LOCK();
-  if (lv_obj_has_state(sw_relay_hold, LV_STATE_CHECKED)) relay_hold_mask |= (1 << i);
-  else relay_hold_mask &= ~(1 << i);
-  UNLOCK();
-  relay_cfg_changed();
 }
 
 static void relay_rename_now() {
@@ -236,14 +181,6 @@ void settings_relays(lv_obj_t *page) {
   lv_textarea_set_max_length(ta_relay_name, 19);
   lv_textarea_set_text(ta_relay_name, relay_cfg.names[0]);
   make_btn(row, LV_SYMBOL_OK, relay_rename_cb);
-
-  row = make_row(parent, LV_FLEX_ALIGN_SPACE_BETWEEN);
-  char txt[40];
-  snprintf(txt, sizeof(txt), "Hold to switch (%.1f s)", RELAY_HOLD_MS / 1000.0f);  // LVGL's printf has no floats
-  lv_label_set_text(lv_label_create(row), txt);
-  sw_relay_hold = lv_switch_create(row);
-  lv_obj_add_event_cb(sw_relay_hold, relay_hold_cb, LV_EVENT_VALUE_CHANGED, NULL);
-  update_hold_switch();
 }
 
 /* ---------- Settings: I2C scan ---------- */

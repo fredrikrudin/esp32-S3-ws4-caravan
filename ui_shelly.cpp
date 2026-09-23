@@ -4,17 +4,16 @@
 
 /* ---------- Shelly tab ---------- */
 struct ShellyCard {
-  lv_obj_t *box, *name, *power, *sub, *btn, *btn_lbl;
+  lv_obj_t *box, *name, *power, *sub, *seg;
 };
 static ShellyCard cards[MAX_SHELLY];
 static lv_obj_t *lbl_shelly_empty;
 
-static void shelly_btn_cb(lv_event_t *e) {
+static void shelly_seg_cb(lv_event_t *e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
-  ShellyData d;
-  shelly_get(i, &d);
-  shelly_set(i, !d.on);  // the task switches and reads back
-  lv_label_set_text(cards[i].btn_lbl, "...");
+  bool want_on = (lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1);
+  shelly_set(i, want_on);  // the task switches and reads the state back
+  set_label(cards[i].sub, "Switching...");
 }
 
 void build_shelly_tab() {
@@ -48,15 +47,9 @@ void build_shelly_tab() {
     c.sub = make_grey_label(c.box);
     lv_obj_align(c.sub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-    c.btn = lv_btn_create(c.box);
-    lv_obj_set_size(c.btn, 120, 60);
-    lv_obj_align(c.btn, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(c.btn, lv_color_hex(0x3A3F44), 0);
-    lv_obj_set_style_bg_color(c.btn, lv_palette_main(LV_PALETTE_GREEN), LV_STATE_CHECKED);
-    lv_obj_add_event_cb(c.btn, shelly_btn_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-    c.btn_lbl = lv_label_create(c.btn);
-    lv_obj_center(c.btn_lbl);
-    lv_label_set_text(c.btn_lbl, "OFF");
+    c.seg = make_segment(c.box, shelly_seg_cb, (void *)(intptr_t)i);
+    lv_obj_set_width(c.seg, 170);
+    lv_obj_align(c.seg, LV_ALIGN_RIGHT_MID, 0, 0);
   }
 }
 
@@ -85,11 +78,7 @@ void shelly_timer_cb(lv_timer_t *t) {
     else snprintf(b, sizeof(b), "%s", d.status);
     set_label(c.sub, b);
 
-    if (d.valid) {
-      set_label(c.btn_lbl, d.on ? "ON" : "OFF");
-      if (d.on) lv_obj_add_state(c.btn, LV_STATE_CHECKED);
-      else lv_obj_clear_state(c.btn, LV_STATE_CHECKED);
-    }
+    if (d.valid) set_segment(c.seg, d.on);
   }
 
   if (shown) {
@@ -113,6 +102,7 @@ static void shelly_enable_cb(lv_event_t *e) {
   feat_shelly = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
   cmd_save_feat = true;
   lv_label_set_text(lbl_shelly_msg, feat_shelly ? "" : "Switched off: no Bluetooth traffic to Shelly devices.");
+  ui_update_tabs();
 }
 
 static void shelly_list_rebuild() {

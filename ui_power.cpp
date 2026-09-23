@@ -81,8 +81,14 @@ static void make_tile(Tile &t, lv_obj_t *parent, const char *title, uint32_t col
   lv_obj_set_style_clip_corner(t.box, true, 0);
   lv_obj_set_style_text_color(t.box, lv_color_white(), 0);
   lv_obj_clear_flag(t.box, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_clear_flag(t.box, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_flag(t.box, LV_OBJ_FLAG_HIDDEN);
+  /* tapping any tile opens the history */
+  lv_obj_add_flag(t.box, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(
+    t.box, [](lv_event_t *e) {
+      show_history_screen();
+    },
+    LV_EVENT_CLICKED, NULL);
 
   /* level fill (used by the battery tile for state of charge) */
   t.fill = lv_obj_create(t.box);
@@ -153,6 +159,14 @@ void build_power_tab() {
   lv_obj_align(tiles[T_BATT].l2, LV_ALIGN_BOTTOM_MID, 0, -24);
   lv_obj_add_flag(tiles[T_LOADS].l1, LV_OBJ_FLAG_HIDDEN);
   lv_obj_align(tiles[T_LOADS].big, LV_ALIGN_TOP_MID, 0, 26);
+
+  /* a link in the corner, for when no tile is showing */
+  lv_obj_t *hist_btn = make_btn(
+    tab_power, LV_SYMBOL_LIST " History", [](lv_event_t *e) {
+      show_history_screen();
+    });
+  lv_obj_set_style_bg_color(hist_btn, lv_color_hex(0x2F3A45), 0);
+  lv_obj_align(hist_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
 
   lbl_power_empty = lv_label_create(tab_power);
   lv_obj_set_style_text_align(lbl_power_empty, LV_TEXT_ALIGN_CENTER, 0);
