@@ -3,7 +3,6 @@
  *  - settings backup and restore (/settings.json), so a flash erase isn't fatal
  * Both are started from Settings -> SD card. */
 #include "app.h"
-#include <SD_MMC.h>
 #include <ArduinoJson.h>
 
 #define CSV_NAME "/data.csv"
@@ -102,8 +101,8 @@ static void csv_write_line() {
     strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
   }
 
-  bool need_header = !SD_MMC.exists(CSV_NAME);
-  File f = SD_MMC.open(CSV_NAME, FILE_APPEND);
+  bool need_header = !sd_fs().exists(CSV_NAME);
+  File f = sd_fs().open(CSV_NAME, FILE_APPEND);
   if (!f) {
     strlcpy(csv_msg, "Cannot write data.csv", sizeof(csv_msg));
     return;
@@ -204,7 +203,7 @@ bool settings_backup() {
   doc["feat"] = (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0);
   doc["csvmin"] = csv_interval_min;
 
-  File f = SD_MMC.open("/settings.json", FILE_WRITE);
+  File f = sd_fs().open("/settings.json", FILE_WRITE);
   if (!f) return false;
   bool ok = serializeJsonPretty(doc, f) > 0;
   f.close();
@@ -215,7 +214,7 @@ bool settings_backup() {
 /* Reads /settings.json back into flash. The board restarts afterwards. */
 bool settings_restore() {
   if (!sd_log_ok()) return false;
-  File f = SD_MMC.open("/settings.json");
+  File f = sd_fs().open("/settings.json");
   if (!f) return false;
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, f);

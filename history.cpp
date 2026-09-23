@@ -1,17 +1,16 @@
 /* Energy history for the Power page.
  * Samples solar power and estimated consumption every 10 s, adds them up into
- * watt-hours, and keeps 24 hourly buckets and 30 daily ones - like the bar
+ * watt-hours, and keeps 24 hourly buckets and 7 daily ones - like the bar
  * charts in Victron VRM. Buckets are kept in PSRAM and, if a card is mounted,
  * written to /history.bin so they survive a restart.
  * Nothing is recorded until the clock is set over NTP. */
 #include "app.h"
-#include <SD_MMC.h>
 
 #define HIST_FILE "/history.bin"
 #define SAMPLE_MS 10000
 
 static HistBucket *hours = nullptr;  // 24 entries, oldest first
-static HistBucket *days = nullptr;   // 30 entries, oldest first
+static HistBucket *days = nullptr;   // 7 entries, oldest first
 static uint32_t cur_hour = 0, cur_day = 0;
 static float acc_solar_wh = 0, acc_load_wh = 0, last_soc = NAN;
 static bool dirty = false;
@@ -28,7 +27,7 @@ void history_get(HistBucket **hour_arr, HistBucket **day_arr) {
 
 static void history_save() {
   if (!sd_log_ok() || !hours) return;
-  File f = SD_MMC.open(HIST_FILE, FILE_WRITE);
+  File f = sd_fs().open(HIST_FILE, FILE_WRITE);
   if (!f) return;
   f.write((uint8_t *)&cur_hour, sizeof(cur_hour));
   f.write((uint8_t *)&cur_day, sizeof(cur_day));
@@ -39,7 +38,7 @@ static void history_save() {
 
 static void history_load() {
   if (!sd_log_ok() || !hours) return;
-  File f = SD_MMC.open(HIST_FILE);
+  File f = sd_fs().open(HIST_FILE);
   if (!f) return;
   if (f.size() == sizeof(cur_hour) + sizeof(cur_day) + sizeof(HistBucket) * (HIST_HOURS + HIST_DAYS)) {
     f.read((uint8_t *)&cur_hour, sizeof(cur_hour));

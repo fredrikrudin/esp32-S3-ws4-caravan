@@ -1,6 +1,6 @@
 /* History screen, opened from the Power tab.
-   Stacked bars of solar and consumption per hour (last 24 h) or per day
-   (last 30 days), with totals beside them, in the style of Victron VRM. */
+   Bars of solar and consumption per hour (last 24 h) or per day (last 7 days),
+   with totals beside them, in the style of Victron VRM. */
 #include "app.h"
 
 static lv_obj_t *hist_scr, *chart, *lbl_period, *lbl_solar, *lbl_load, *lbl_soc, *period_sel;
@@ -8,7 +8,7 @@ static lv_chart_series_t *ser_solar, *ser_load;
 static lv_obj_t *back_from = nullptr;
 static bool daily = false;  // false = 24 hours, true = 30 days
 
-static const char *period_map[] = { "24 hours", "30 days", "" };
+static const char *period_map[] = { "24 hours", "7 days", "" };
 
 /* X axis labels: hours ago / days ago, every few bars so they stay readable */
 static void chart_draw_cb(lv_event_t *e) {
@@ -44,7 +44,7 @@ static void refresh_chart() {
 
   float solar_kwh, load_kwh;
   history_totals(daily, &solar_kwh, &load_kwh);
-  lv_label_set_text_fmt(lbl_period, "%s  %s", daily ? "Last 30 days" : "Last 24 hours",
+  lv_label_set_text_fmt(lbl_period, "%s  %s", daily ? "Last 7 days" : "Last 24 hours",
                         daily ? "(kWh per day)" : "(Wh per hour)");
   char b[48];
   snprintf(b, sizeof(b), "%.2f kWh", solar_kwh);

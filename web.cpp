@@ -16,7 +16,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
-#include <SD_MMC.h>
 
 static WebServer server(80);
 static bool started = false;
@@ -571,7 +570,7 @@ static void handle_files() {
       return;
     }
     if (!name.startsWith("/")) name = "/" + name;
-    File f = SD_MMC.open(name);
+    File f = sd_fs().open(name);
     if (!f || f.isDirectory()) {
       server.send(404, "text/plain", "Not found");
       return;

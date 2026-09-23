@@ -27,9 +27,10 @@ static Arduino_ESP32RGBPanel *rgbpanel = new Arduino_ESP32RGBPanel(
   1 /* hsync_polarity */, 10 /* hsync_front_porch */, 8 /* hsync_pulse_width */, 50 /* hsync_back_porch */,
   1 /* vsync_polarity */, 10 /* vsync_front_porch */, 8 /* vsync_pulse_width */, 20 /* vsync_back_porch */,
   /* A lower pixel clock needs less PSRAM bandwidth, which stops the panel from
-     losing sync (the whole image shifted down) when WiFi, Bluetooth and flash
-     are all busy at startup. Raise it again if the display flickers. */
-  0 /* pclk_active_neg */, 12000000 /* prefer_speed */, false /* useBigEndian */,
+     losing sync (the whole image shifted down) when WiFi, Bluetooth, the SD card
+     and the log buffer are all using PSRAM. 10 MHz is about 47 frames/s.
+     The proper fix is bounce buffers, which need a newer GFX Library for Arduino. */
+  0 /* pclk_active_neg */, 10000000 /* prefer_speed */, false /* useBigEndian */,
   0 /* de_idle_high */, 0 /* pclk_idle_high */);
 
 static Arduino_RGB_Display *gfx = new Arduino_RGB_Display(

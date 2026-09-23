@@ -11,7 +11,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | Tab | What it shows |
 |---|---|
 | **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
-| **Power** | Tap any tile (or the History button) for bar charts of the last 24 hours and 30 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
+| **Power** | Tap any tile for bar charts of the last 24 hours and 7 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
 | **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
 | **Shelly** | Up to 4 Shelly plugs/switches over Bluetooth (BLE RPC): on/off and power. Off by default; pair them under Settings |
 | **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Each relay is an Off | On segmented control in the Victron switch-pane style, so a stray touch can't toggle anything |

@@ -14,6 +14,9 @@
 #define COL_INV 0x8E44AD
 #define COL_ALARM 0xC0392B
 #define COL_LINE 0x5D6D7E
+/* The extra button upset the page layout on the board, so it is off:
+   tapping any tile opens the history instead. Set to 1 to try it again. */
+#define SHOW_HISTORY_BUTTON 0
 
 struct Tile {
   lv_obj_t *box, *fill, *title, *big, *l1, *l2;
@@ -160,17 +163,28 @@ void build_power_tab() {
   lv_obj_add_flag(tiles[T_LOADS].l1, LV_OBJ_FLAG_HIDDEN);
   lv_obj_align(tiles[T_LOADS].big, LV_ALIGN_TOP_MID, 0, 26);
 
-  /* a link in the corner, for when no tile is showing */
+#if SHOW_HISTORY_BUTTON
+  /* A link in the corner, for when no tile is showing. Fixed position and size,
+     so it can never make the page taller than the screen (which would let the
+     tabview scroll and look like the tab bar had moved). */
   lv_obj_t *hist_btn = make_btn(
     tab_power, LV_SYMBOL_LIST " History", [](lv_event_t *e) {
       show_history_screen();
     });
   lv_obj_set_style_bg_color(hist_btn, lv_color_hex(0x2F3A45), 0);
-  lv_obj_align(hist_btn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+  lv_obj_set_size(hist_btn, 104, 34);
+  lv_obj_set_pos(hist_btn, 370, 392);
+#endif
 
   lbl_power_empty = lv_label_create(tab_power);
   lv_obj_set_style_text_align(lbl_power_empty, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_text(lbl_power_empty, "No Victron devices yet.\nAdd them under Settings.");
+  lv_obj_add_flag(lbl_power_empty, LV_OBJ_FLAG_CLICKABLE);  // tapping here opens the history too
+  lv_obj_add_event_cb(
+    lbl_power_empty, [](lv_event_t *e) {
+      show_history_screen();
+    },
+    LV_EVENT_CLICKED, NULL);
   lv_obj_center(lbl_power_empty);
 }
 

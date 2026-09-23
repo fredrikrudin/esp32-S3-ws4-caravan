@@ -16,6 +16,7 @@ void setup() {
 
   board_init();  // IO expander, touch, display, LVGL
   log_begin();   // Serial + ring buffer (+ TF card when switched on)
+  if (feat_sdlog) sd_log_mount();  // before WiFi and Bluetooth, as in Waveshare's SD demo
   history_begin();
   state_init();
   load_cfg();

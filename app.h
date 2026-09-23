@@ -14,6 +14,7 @@
 #include <string>
 #include <math.h>
 #include <time.h>
+#include <FS.h>
 #include "HWCDC.h"
 
 /* ================================================================== */
@@ -67,7 +68,7 @@ LV_FONT_DECLARE(font_clock_96)
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
 #define HIST_HOURS 24         // hourly energy buckets kept
-#define HIST_DAYS 30          // daily energy buckets kept
+#define HIST_DAYS 7           // daily energy buckets kept
 #define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery and Shelly pages
 #define MAX_SHELLY 4          // Shelly devices that can be paired
 #define BMS_MAX_CELLS 16
@@ -341,6 +342,7 @@ void sd_card_info(char *out, size_t n);
 bool sd_log_new_file();
 int sd_log_delete_old();
 void sd_list_files(String &out);
+fs::FS &sd_fs();  // the mounted card (SD mode or SPI mode)
 
 /* history.cpp (energy history behind the Power tab's History screen) */
 void history_begin();
