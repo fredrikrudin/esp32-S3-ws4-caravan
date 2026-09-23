@@ -2,7 +2,7 @@
 
 Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 touch board with the CH32V003 IO expander. Built with Arduino and LVGL 8.
 
-![Power tab](power-tab.png)
+![Power tab](power-page.png)
 
 *The Power tab with example values. Dots move along the lines where energy flows.*
 
