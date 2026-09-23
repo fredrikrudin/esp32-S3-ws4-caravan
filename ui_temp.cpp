@@ -67,6 +67,13 @@ void ruuvi_timer_cb(lv_timer_t *t) {
   char b[96];
   int shown = 0;
 
+  if (!feat_ruuvi) {
+    for (int i = 0; i < MAX_RUUVI; i++) lv_obj_add_flag(cards[i].card, LV_OBJ_FLAG_HIDDEN);
+    set_label(lbl_rv_empty, "Temperature reading is switched off.\nSwitch it on under Settings.");
+    lv_obj_clear_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
   for (int i = 0; i < MAX_RUUVI; i++) {
     RuuviCard &c = cards[i];
     if (!ruuvi_cfg[i].used) {
@@ -106,8 +113,12 @@ void ruuvi_timer_cb(lv_timer_t *t) {
     set_label(c.info, b);
   }
 
-  if (shown) lv_obj_add_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
-  else lv_obj_clear_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
+  if (shown) {
+    lv_obj_add_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    set_label(lbl_rv_empty, "No RuuviTags added yet.\nAdd up to 3 under Settings.");
+    lv_obj_clear_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
+  }
 
   ruuvi_settings_refresh(copy, now);
 }

@@ -10,14 +10,18 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 
 | Tab | What it shows |
 |---|---|
+| **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
 | **Power** | Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
 | **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
+| **Shelly** | Up to 4 Shelly plugs/switches over Bluetooth (BLE RPC): on/off and power. Off by default; pair them under Settings |
 | **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Relays can be set to "hold to switch" (orange while held) so a bump can't switch them |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
 | **⚙ Settings** | WiFi, weather location, RuuviTags, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
 
 A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+
+The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic) and the matching tab says so.
 
 Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
@@ -36,6 +40,8 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 ```
 
 A small **web page** shows the battery SOC, the Victron devices (and which are charging) and the relays. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`. The page is read-only.
+
+The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic) and the matching tab says so.
 
 Under **Settings → Web page** you can set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
@@ -67,19 +73,23 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `net.cpp` | Network task: WiFi, NTP, weather, all flash writes |
 | `web.cpp` | Web page and JSON with battery, Victron and relay status |
 | `ble.cpp` | Bluetooth scanning |
-| `bms.cpp` | Battery BMS connection (experimental): JBD protocol and diagnostics |
+| `bms.cpp` | Battery BMS connection: ECO-WORTHY and JBD protocols, plus diagnostics |
+| `shelly.cpp` | Shelly devices over BLE RPC (pairing, status, switching) |
 | `ruuvi.cpp` | RuuviTag decoding |
 | `victron.cpp` | Victron decryption and decoding |
 | `relays.cpp` | PCF8574 relays and I2C scan |
 | `ui_common.cpp` | Tabs, keyboard, widget helpers, timers |
+| `ui_home.cpp` | Home tab (start page) |
 | `ui_power.cpp` | Power tab |
 | `ui_battery.cpp` | Battery tab (experimental) |
 | `ui_relays.cpp` | Relays tab + relay and I2C settings |
+| `ui_shelly.cpp` | Shelly tab + Shelly pairing settings |
 | `ui_temp.cpp` | Temp tab (RuuviTag cards) |
 | `ui_weather.cpp` | Weather tab and clock |
 | `ui_settings.cpp` | Settings tab (WiFi, location, RuuviTags, display, scan interval) |
 | `ui_victron_settings.cpp` | Victron device settings |
 | `ui_saver.cpp` | Screen saver |
+| `font_clock_96.c` | 96 px clock font for the screen saver (digits, `:` and `-`) |
 | `power-tab.png` | Power tab picture for this README |
 | `memory.md` | Notes and plan for lowering memory use and latency |
 

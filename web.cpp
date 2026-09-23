@@ -217,8 +217,9 @@ static void handle_root() {
     add(s, "</div><div class='sub'>%s</div>", esc_html(cfg[bm].name).c_str());
   } else if (bms_fresh) {
     add(s, "<div class='soc'>%d%%</div><div class='bar'><div style='width:%d%%'></div></div>", bms.soc, bms.soc);
-    add(s, "<div>%.2f V &middot; %+.1f A &middot; %+.0f W</div><div class='sub'>Battery BMS</div>",
-        bms.volt, bms.curr, bms.volt * bms.curr);
+    if (!isnan(bms.curr)) add(s, "<div>%.2f V &middot; %+.1f A &middot; %+.0f W</div>", bms.volt, bms.curr, bms.volt * bms.curr);
+    else add(s, "<div>%.2f V &middot; %.1f / %.0f Ah</div>", bms.volt, bms.remain_ah, bms.nominal_ah);
+    s += F("<div class='sub'>Battery BMS</div>");
   } else {
     s += F("<div class='sub'>No battery data</div>");
   }
@@ -296,8 +297,11 @@ static void handle_json() {
     num_json(s, "power", (isnan(d.batt_v) || isnan(d.batt_i)) ? NAN : d.batt_v * d.batt_i, 0);
     add(s, ",\"source\":\"victron\"");
   } else if (bms_fresh) {
-    add(s, "\"soc\":%d,\"voltage\":%.2f,\"current\":%.2f,\"power\":%.0f,\"source\":\"bms\"",
-        bms.soc, bms.volt, bms.curr, bms.volt * bms.curr);
+    add(s, "\"soc\":%d,\"voltage\":%.2f,", bms.soc, bms.volt);
+    num_json(s, "current", bms.curr, 2);
+    s += ',';
+    num_json(s, "power", isnan(bms.curr) ? NAN : bms.volt * bms.curr, 0);
+    add(s, ",\"source\":\"bms\"");
   } else {
     s += "\"soc\":null";
   }

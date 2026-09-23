@@ -26,7 +26,7 @@ uint8_t relay_mask() {
 }
 
 bool relay_apply() {
-  if (!relay_cfg.addr) {
+  if (!feat_relays || !relay_cfg.addr) {
     pcf_ok = false;
     return false;
   }
@@ -38,7 +38,7 @@ bool relay_apply() {
 
 void relay_read_back() {
   uint8_t port;
-  if (relay_cfg.addr && pcf_read(relay_cfg.addr, &port)) {
+  if (feat_relays && relay_cfg.addr && pcf_read(relay_cfg.addr, &port)) {
     pcf_ok = true;
     relay_state = (relay_cfg.active_low ? (uint8_t)~port : port) & relay_mask();
   } else {

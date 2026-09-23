@@ -44,6 +44,7 @@ static void saver_update_soc() {
 }
 
 static void saver_wake_cb(lv_event_t *e) {
+  USBSerial.println("Screen saver off");
   set_backlight(bl_normal);
   lv_scr_load(main_scr);
   lv_disp_trig_activity(NULL);
@@ -68,7 +69,7 @@ void build_saver() {
   lv_obj_center(saver_box);
 
   saver_clock = lv_label_create(saver_box);
-  lv_obj_set_style_text_font(saver_clock, FONT_CLOCK, 0);
+  lv_obj_set_style_text_font(saver_clock, FONT_SAVER, 0);  // 96 px, double the tab-page clock
   lv_label_set_text(saver_clock, "--:--");
   saver_date = lv_label_create(saver_box);
   lv_label_set_text(saver_date, "");
@@ -85,7 +86,7 @@ void build_saver() {
   lv_obj_add_flag(soc_row, LV_OBJ_FLAG_HIDDEN);
 
   soc_bar = lv_bar_create(soc_row);
-  lv_obj_set_size(soc_bar, 200, 18);
+  lv_obj_set_size(soc_bar, 260, 20);  // matches the wider clock
   lv_bar_set_range(soc_bar, 0, 100);
   lv_obj_set_style_bg_color(soc_bar, lv_color_hex(SAVER_BAR_BG), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(soc_bar, LV_OPA_COVER, LV_PART_MAIN);
@@ -106,6 +107,7 @@ void saver_timer_cb(lv_timer_t *t) {
     saver_update_soc();  // fill it in before the screen shows
     lv_scr_load(saver_scr);
     set_backlight(bl_saver);
+    USBSerial.printf("Screen saver on (backlight %u%%)\n", bl_saver);
   }
 
   saver_update_soc();
@@ -115,7 +117,7 @@ void saver_timer_cb(lv_timer_t *t) {
   if (strcmp(lv_label_get_text(saver_clock), tb)) {
     lv_label_set_text(saver_clock, tb);
     /* move the clock a little every minute so nothing stays in one place */
-    lv_obj_align(saver_box, LV_ALIGN_CENTER, (int)(esp_random() % 121) - 60, (int)(esp_random() % 161) - 80);
+    lv_obj_align(saver_box, LV_ALIGN_CENTER, (int)(esp_random() % 81) - 40, (int)(esp_random() % 121) - 60);
   }
   set_label(saver_date, db);
 }

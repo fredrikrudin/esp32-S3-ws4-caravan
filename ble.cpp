@@ -59,9 +59,11 @@ void ble_start() {
    devices advertise about once per second, so 1.5 s catches each one). */
 static volatile bool scan_paused = false;
 
+/* May be called from the network task, possibly before ble_start() has run:
+   the flag alone then keeps scanning from starting until WiFi is connected. */
 void ble_pause_scan(bool pause) {
   scan_paused = pause;
-  if (pause && NimBLEDevice::getScan()->isScanning()) NimBLEDevice::getScan()->stop();
+  if (pause && NimBLEDevice::isInitialized() && NimBLEDevice::getScan()->isScanning()) NimBLEDevice::getScan()->stop();
 }
 
 void ble_scan_service() {

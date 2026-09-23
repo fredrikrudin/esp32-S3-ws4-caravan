@@ -25,6 +25,7 @@ static void ruuvi_store(const RuuviTag &r) {
 }
 
 void ruuvi_parse(const std::string &md, const char *addr, int rssi) {
+  if (!feat_ruuvi) return;  // switched off in Settings
   const uint8_t *d = (const uint8_t *)md.data();
   size_t n = md.size();
   if (n < 3 || d[0] != 0x99 || d[1] != 0x04) return;  // Ruuvi company ID 0x0499

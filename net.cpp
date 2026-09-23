@@ -238,6 +238,18 @@ static void save_pending() {
     prefs.putBytes("relay", &copy, sizeof(copy));
     prefs.putUChar("relayhold", relay_hold_mask);
   }
+  if (cmd_save_feat) {
+    cmd_save_feat = false;
+    prefs.putUChar("feat", (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0));
+  }
+  if (cmd_save_shelly) {
+    cmd_save_shelly = false;
+    ShellyCfg copy[MAX_SHELLY];
+    LOCK();
+    memcpy(copy, shelly_cfg, sizeof(copy));
+    UNLOCK();
+    prefs.putBytes("shelly", copy, sizeof(copy));
+  }
   if (cmd_save_web) {
     cmd_save_web = false;
     char pass[33];
@@ -273,10 +285,50 @@ static void save_pending() {
   }
 }
 
+static volatile bool wifi_inited = false;
+static volatile uint8_t last_disc_reason = 0;  // why the last connection attempt failed
+
+/* WiFi tells us why a connection failed or dropped; show it instead of guessing */
+static void wifi_event(arduino_event_id_t event, arduino_event_info_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    last_disc_reason = info.wifi_sta_disconnected.reason;
+    USBSerial.printf("WiFi disconnected, reason %u (%s)\n", last_disc_reason,
+                     WiFi.disconnectReasonName((wifi_err_reason_t)last_disc_reason));
+  }
+}
+
+/* Plain-language version of the most common reasons */
+static const char *disc_reason_text(uint8_t r) {
+  switch (r) {
+    case 0: return "no answer";
+    case WIFI_REASON_NO_AP_FOUND: return "network not found";
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "wrong password or handshake timeout";
+    case WIFI_REASON_AUTH_EXPIRE:
+    case WIFI_REASON_ASSOC_EXPIRE:
+    case WIFI_REASON_BEACON_TIMEOUT: return "weak signal / timeout";
+    case WIFI_REASON_ASSOC_FAIL:
+    case WIFI_REASON_CONNECTION_FAIL: return "router refused the connection";
+    default: return WiFi.disconnectReasonName((wifi_err_reason_t)r);
+  }
+}
+
+bool net_wait_wifi_init(uint32_t ms) {
+  uint32_t start = millis();
+  while (!wifi_inited && millis() - start < ms) delay(10);
+  return wifi_inited;
+}
+
 static void net_task(void *arg) {
+  USBSerial.printf("Before WiFi init: internal heap free %u, largest block %u\n",
+                   heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                   heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   WiFi.persistent(false);  // we store credentials ourselves; avoid extra flash writes
+  WiFi.onEvent(wifi_event);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  wifi_inited = true;  // setup() waits for this before starting Bluetooth
 
   bool was_up = false, ntp_started = false;
   uint32_t connect_started = 0, next_weather = 0;
@@ -304,6 +356,8 @@ static void net_task(void *arg) {
       if (prefs.getString("pass", "") != pass) prefs.putString("pass", pass);
       WiFi.disconnect();
       vTaskDelay(pdMS_TO_TICKS(200));
+      last_disc_reason = 0;
+      ble_pause_scan(true);  // WiFi and Bluetooth share the radio: give WiFi all of it while joining
       WiFi.begin(ssid, pass);
       connect_started = millis() | 1;
       was_up = false;
@@ -319,6 +373,7 @@ static void net_task(void *arg) {
                        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
       connect_started = 0;
+      ble_pause_scan(false);  // connected: Bluetooth scanning can continue
       if (!ntp_started) {
         configTime(0, 0, "pool.ntp.org", "time.google.com");  // UTC; local offset comes from Open-Meteo
         ntp_started = true;
@@ -330,8 +385,9 @@ static void net_task(void *arg) {
     was_up = up;
 
     if (!up && connect_started && millis() - connect_started > 20000) {
-      set_wifi_status("Could not connect. Check the password.");
+      set_wifi_status("Could not connect: %s (reason %u)", disc_reason_text(last_disc_reason), last_disc_reason);
       connect_started = 0;
+      ble_pause_scan(false);  // don't leave Bluetooth paused; WiFi keeps retrying by itself
     }
 
     if (cmd_geocode) {

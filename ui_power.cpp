@@ -1,6 +1,8 @@
-/* Power tab: classic Victron overview style.
-   Sources (solar, shore charger, DC-DC) on top, battery in the middle,
-   DC loads and inverter at the bottom, with animated flow dots. */
+/* Power tab: classic Victron overview style, built around the battery.
+   The battery (SmartShunt) sits large in the middle. DC sources (solar, DC-DC)
+   are on its left, the AC side (shore charger, inverter) on its right, and
+   DC loads below, connected by solid lines. A line takes the colour of its
+   device while energy is flowing, and is dim grey when nothing is happening. */
 #include "app.h"
 
 #define COL_SOLAR 0xF39C12
@@ -20,56 +22,28 @@ struct Tile {
 struct Flow {
   lv_obj_t *line;
   lv_point_t pts[2];
-  lv_obj_t *dot[3];
-  int dir;  // 0 = no flow, 1 = forward
+  uint32_t color;  // colour of the device this line belongs to
+  int dir;         // 0 = no flow, 1 = flowing
 };
 enum { T_SOLAR, T_AC, T_DCDC, T_BATT, T_LOADS, T_INV, T_COUNT };
 
 static Tile tiles[T_COUNT];
-static Flow flows[5];  // solar, AC, DC-DC -> battery; battery -> loads; battery -> inverter
+/* flows[0] solar, [1] DC-DC, [2] shore charger, [3] inverter, [4] DC loads */
+static Flow flows[5];
 static lv_obj_t *lbl_power_empty;
 
 /* ---------- flow lines ---------- */
-static void flow_anim_cb(void *var, int32_t v) {
-  Flow *f = (Flow *)var;
-  if (f->dir == 0) return;
-  for (int k = 0; k < 3; k++) {
-    int t = (v + k * 333) % 1000;
-    lv_coord_t x = f->pts[0].x + (f->pts[1].x - f->pts[0].x) * t / 1000 - 4;
-    lv_coord_t y = f->pts[0].y + (f->pts[1].y - f->pts[0].y) * t / 1000 - 4;
-    lv_obj_set_pos(f->dot[k], x, y);
-  }
-}
-
-static void make_flow(Flow &f, lv_obj_t *parent) {
+static void make_flow(Flow &f, lv_obj_t *parent, uint32_t color) {
   f.dir = 0;
+  f.color = color;
   f.pts[0].x = f.pts[0].y = f.pts[1].x = f.pts[1].y = 0;
   f.line = lv_line_create(parent);
-  lv_obj_set_style_line_width(f.line, 3, 0);
+  lv_obj_set_style_line_width(f.line, 4, 0);
   lv_obj_set_style_line_color(f.line, lv_color_hex(COL_LINE), 0);
   lv_obj_set_style_line_rounded(f.line, true, 0);
   lv_obj_clear_flag(f.line, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_flag(f.line, LV_OBJ_FLAG_HIDDEN);
   lv_line_set_points(f.line, f.pts, 2);
-  for (int k = 0; k < 3; k++) {
-    lv_obj_t *d = lv_obj_create(parent);
-    lv_obj_remove_style_all(d);
-    lv_obj_set_size(d, 8, 8);
-    lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(d, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(d, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(d, LV_OBJ_FLAG_HIDDEN);
-    f.dot[k] = d;
-  }
-  lv_anim_t a;
-  lv_anim_init(&a);
-  lv_anim_set_var(&a, &f);
-  lv_anim_set_exec_cb(&a, flow_anim_cb);
-  lv_anim_set_values(&a, 0, 999);
-  lv_anim_set_time(&a, 2000);
-  lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-  lv_anim_start(&a);
 }
 
 static void set_flow_geom(Flow &f, int x0, int y0, int x1, int y1) {
@@ -86,13 +60,12 @@ static void set_flow_visible(Flow &f, bool visible) {
   if (!visible) f.dir = 0;
 }
 
+/* flowing: the line lights up in the device's colour */
 static void set_flow_dir(Flow &f, int dir) {
   if (lv_obj_has_flag(f.line, LV_OBJ_FLAG_HIDDEN)) dir = 0;
   f.dir = dir;
-  for (int k = 0; k < 3; k++) {
-    if (dir) lv_obj_clear_flag(f.dot[k], LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(f.dot[k], LV_OBJ_FLAG_HIDDEN);
-  }
+  lv_obj_set_style_line_color(f.line, lv_color_hex(dir ? f.color : COL_LINE), 0);
+  lv_obj_set_style_line_width(f.line, dir ? 6 : 4, 0);
 }
 
 /* ---------- tiles ---------- */
@@ -150,20 +123,36 @@ void build_power_tab() {
   lv_obj_set_style_pad_all(tab_power, 0, 0);
   lv_obj_clear_flag(tab_power, LV_OBJ_FLAG_SCROLLABLE);
 
-  for (int i = 0; i < 5; i++) make_flow(flows[i], tab_power);  // lines first, tiles on top
+  /* lines first, tiles on top; each line carries its device's colour */
+  make_flow(flows[0], tab_power, COL_SOLAR);
+  make_flow(flows[1], tab_power, COL_DCDC);
+  make_flow(flows[2], tab_power, COL_AC);
+  make_flow(flows[3], tab_power, COL_INV);
+  make_flow(flows[4], tab_power, COL_LOADS);
 
-  make_tile(tiles[T_SOLAR], tab_power, "PV charger", COL_SOLAR, 148, 110);
-  make_tile(tiles[T_AC], tab_power, "Shore charger", COL_AC, 148, 110);
-  make_tile(tiles[T_DCDC], tab_power, "DC-DC", COL_DCDC, 148, 110);
-  make_tile(tiles[T_BATT], tab_power, "Battery", COL_BATT_BG, 220, 140);
-  make_tile(tiles[T_LOADS], tab_power, "DC loads", COL_LOADS, 180, 104);
-  make_tile(tiles[T_INV], tab_power, "Inverter", COL_INV, 180, 104);
+  /* side tiles are narrow; the battery is the big one in the middle */
+  make_tile(tiles[T_SOLAR], tab_power, "PV charger", COL_SOLAR, 120, 96);
+  make_tile(tiles[T_DCDC], tab_power, "DC-DC", COL_DCDC, 120, 96);
+  make_tile(tiles[T_AC], tab_power, "Shore charger", COL_AC, 120, 96);
+  make_tile(tiles[T_INV], tab_power, "Inverter", COL_INV, 120, 96);
+  make_tile(tiles[T_BATT], tab_power, "Battery", COL_BATT_BG, 160, 180);
+  make_tile(tiles[T_LOADS], tab_power, "DC loads", COL_LOADS, 160, 80);
+
+  /* the side tiles have less room: move their lines up a little */
+  const int side[4] = { T_SOLAR, T_DCDC, T_AC, T_INV };
+  for (int i = 0; i < 4; i++) {
+    lv_obj_align(tiles[side[i]].big, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_align(tiles[side[i]].l1, LV_ALIGN_BOTTOM_MID, 0, -22);
+  }
 
   lv_obj_set_style_bg_color(tiles[T_BATT].fill, lv_color_hex(COL_BATT), 0);
   lv_obj_clear_flag(tiles[T_BATT].fill, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_text_font(tiles[T_BATT].big, FONT_CLOCK, 0);
+  lv_obj_align(tiles[T_BATT].big, LV_ALIGN_TOP_MID, 0, 44);
+  lv_obj_align(tiles[T_BATT].l1, LV_ALIGN_BOTTOM_MID, 0, -46);
+  lv_obj_align(tiles[T_BATT].l2, LV_ALIGN_BOTTOM_MID, 0, -24);
   lv_obj_add_flag(tiles[T_LOADS].l1, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_align(tiles[T_LOADS].big, LV_ALIGN_TOP_MID, 0, 28);
+  lv_obj_align(tiles[T_LOADS].big, LV_ALIGN_TOP_MID, 0, 26);
 
   lbl_power_empty = lv_label_create(tab_power);
   lv_obj_set_style_text_align(lbl_power_empty, LV_TEXT_ALIGN_CENTER, 0);
@@ -171,37 +160,44 @@ void build_power_tab() {
   lv_obj_center(lbl_power_empty);
 }
 
-/* Positions the tiles that are in use */
+/* Positions the tiles that are in use: DC sources left, AC side right,
+   battery in the middle, DC loads below */
 static void power_layout(const bool has[T_COUNT]) {
   const int W = 480;
-  const int top_y = 6, top_w = 148, top_h = 110, gap = 8;
-  const int bat_w = 220, bat_h = 140, bat_x = (W - bat_w) / 2, bat_y = 150;
-  const int bot_w = 180, bot_y = 318, bot_gap = 16;
-  const int src_tile[3] = { T_SOLAR, T_AC, T_DCDC };
+  const int tw = 120, th = 96, gap = 10;
+  const int bat_w = 160, bat_h = 180, bat_x = (W - bat_w) / 2, bat_y = 110;
+  const int load_w = 160, load_h = 80, load_x = (W - load_w) / 2, load_y = 310;
+  const int left_x = 6, right_x = W - 6 - tw;
 
-  /* top row: sources (flows 0-2) */
-  int n = 0;
-  for (int i = 0; i < 3; i++) n += has[src_tile[i]];
-  int x = n ? (W - (n * top_w + (n - 1) * gap)) / 2 : 0;
-  int k = 0;
-  for (int i = 0; i < 3; i++) {
-    Tile &t = tiles[src_tile[i]];
-    if (!has[src_tile[i]]) {
-      lv_obj_add_flag(t.box, LV_OBJ_FLAG_HIDDEN);
-      set_flow_visible(flows[i], false);
-      set_flow_dir(flows[i], 0);
-      continue;
+  /* one column of up to two tiles beside the battery */
+  auto column = [&](int t_a, int t_b, int f_a, int f_b, bool left) {
+    const int tile[2] = { t_a, t_b };
+    const int flow[2] = { f_a, f_b };
+    int n = has[t_a] + has[t_b];
+    int y = (n == 2) ? bat_y : bat_y + (bat_h - th) / 2;  // one tile: level with the battery
+    for (int i = 0; i < 2; i++) {
+      Tile &t = tiles[tile[i]];
+      Flow &f = flows[flow[i]];
+      if (!has[tile[i]]) {
+        lv_obj_add_flag(t.box, LV_OBJ_FLAG_HIDDEN);
+        set_flow_visible(f, false);
+        set_flow_dir(f, 0);
+        continue;
+      }
+      lv_obj_clear_flag(t.box, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_set_pos(t.box, left ? left_x : right_x, y);
+      int cy = y + th / 2;
+      if (left) set_flow_geom(f, left_x + tw, cy, bat_x, cy);                    // source -> battery
+      else if (tile[i] == T_INV) set_flow_geom(f, bat_x + bat_w, cy, right_x, cy);  // battery -> inverter
+      else set_flow_geom(f, right_x, cy, bat_x + bat_w, cy);                     // charger -> battery
+      set_flow_visible(f, true);
+      y += th + gap;
     }
-    lv_obj_clear_flag(t.box, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(t.box, x, top_y);
-    int tx = W / 2 + (n > 1 ? (k * 2 - (n - 1)) * 40 : 0);  // spread the lines along the battery top
-    set_flow_geom(flows[i], x + top_w / 2, top_y + top_h, tx, bat_y);
-    set_flow_visible(flows[i], true);
-    x += top_w + gap;
-    k++;
-  }
+  };
 
-  /* middle: battery */
+  column(T_SOLAR, T_DCDC, 0, 1, true);
+  column(T_AC, T_INV, 2, 3, false);
+
   if (has[T_BATT]) {
     lv_obj_clear_flag(tiles[T_BATT].box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_pos(tiles[T_BATT].box, bat_x, bat_y);
@@ -209,27 +205,15 @@ static void power_layout(const bool has[T_COUNT]) {
     lv_obj_add_flag(tiles[T_BATT].box, LV_OBJ_FLAG_HIDDEN);
   }
 
-  /* bottom row: DC loads (flow 3) and inverter (flow 4) */
-  const int bot_tile[2] = { T_LOADS, T_INV };
-  int nb = has[T_LOADS] + has[T_INV];
-  int bx = nb ? (W - (nb * bot_w + (nb - 1) * bot_gap)) / 2 : 0;
-  k = 0;
-  for (int i = 0; i < 2; i++) {
-    Tile &t = tiles[bot_tile[i]];
-    Flow &f = flows[3 + i];
-    if (!has[bot_tile[i]]) {
-      lv_obj_add_flag(t.box, LV_OBJ_FLAG_HIDDEN);
-      set_flow_visible(f, false);
-      set_flow_dir(f, 0);
-      continue;
-    }
-    lv_obj_clear_flag(t.box, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(t.box, bx, bot_y);
-    int sx = W / 2 + (nb > 1 ? (k * 2 - 1) * 40 : 0);
-    set_flow_geom(f, sx, bat_y + bat_h, bx + bot_w / 2, bot_y);
-    set_flow_visible(f, true);
-    bx += bot_w + bot_gap;
-    k++;
+  if (has[T_LOADS]) {
+    lv_obj_clear_flag(tiles[T_LOADS].box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(tiles[T_LOADS].box, load_x, load_y);
+    set_flow_geom(flows[4], W / 2, bat_y + bat_h, W / 2, load_y);
+    set_flow_visible(flows[4], true);
+  } else {
+    lv_obj_add_flag(tiles[T_LOADS].box, LV_OBJ_FLAG_HIDDEN);
+    set_flow_visible(flows[4], false);
+    set_flow_dir(flows[4], 0);
   }
 }
 
@@ -332,7 +316,7 @@ void power_timer_cb(lv_timer_t *timer) {
     if (!isnan(ac_w)) snprintf(b, sizeof(b), "%.2f V  %.1f A", dat[i].batt_v, dat[i].batt_i);
     else b[0] = 0;
     set_label(t.l2, b);
-    set_flow_dir(flows[1], !isnan(ac_w) && ac_w > 2);
+    set_flow_dir(flows[2], !isnan(ac_w) && ac_w > 2);  // shore charger
   }
 
   /* ---- DC-DC ---- */
@@ -349,7 +333,7 @@ void power_timer_cb(lv_timer_t *timer) {
     else b[0] = 0;
     set_label(t.l2, b);
     dcdc_active = ok(i) && vic_active_state(dat[i].state);
-    set_flow_dir(flows[2], dcdc_active);
+    set_flow_dir(flows[1], dcdc_active);
   }
 
   /* ---- battery ---- */
@@ -436,7 +420,7 @@ void power_timer_cb(lv_timer_t *timer) {
     }
     set_label(t.l2, b);
     inv_active = ok(i) && d.state == 9;  // inverting
-    set_flow_dir(flows[4], inv_active);
+    set_flow_dir(flows[3], inv_active);
   }
 
   /* ---- DC loads (calculated: chargers in - battery in) ---- */
@@ -457,7 +441,7 @@ void power_timer_cb(lv_timer_t *timer) {
                        : inv_active                ? "Calculated, incl. inverter"
                                                    : "Calculated";
     set_label(t.l2, note);
-    set_flow_dir(flows[3], !isnan(loads) && loads > 2);
+    set_flow_dir(flows[4], !isnan(loads) && loads > 2);
   }
 
   victron_settings_refresh(cfg, dat, seen, now);

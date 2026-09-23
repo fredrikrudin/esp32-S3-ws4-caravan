@@ -1,24 +1,37 @@
 # Memory and latency optimisation
 
 Notes on how to lower internal RAM use and improve touch response and smoothness.
-Nothing here is implemented yet unless it is ticked.
+Items are ticked in the plan at the bottom when done.
 
 ## Where we are
 
 The ESP32-S3 has about 320 KB of fast **internal RAM** and 8 MB of slower **PSRAM**.
 WiFi, Bluetooth, the display driver and LVGL all compete for the internal RAM.
 
-Measured so far (Serial Monitor):
+Measured (Serial Monitor), before and after the first round of changes:
 
-| Moment | Internal RAM free |
-|---|---|
-| After display init | ~127–143 KB |
-| After Bluetooth (NimBLE) start | ~63–79 KB (BLE takes ~63 KB) |
-| After WiFi connected | ~16 KB, largest free block ~7.6 KB |
+| Moment | Before | After |
+|---|---|---|
+| At start | – | 264 KB |
+| After display init | ~127–143 KB | 185 KB |
+| After WiFi init | – | 128 KB (WiFi driver ~49 KB) |
+| Setup done (after Bluetooth) | ~56–66 KB | 63 KB (Bluetooth ~66 KB) |
+| **After WiFi connected** | **~16 KB, largest block 7.6 KB** | **54 KB, largest block 32 KB** |
 
-~16 KB free is too tight: WiFi and BLE allocate memory on the fly, and running out
-causes crashes or dropped connections. HTTPS (which needs 40+ KB) is not possible,
-which is why Open-Meteo is fetched over plain HTTP.
+What made the difference:
+- LVGL memory pool moved to PSRAM (`lv_conf.h`, 128 KB pool)
+- WiFi is started before Bluetooth, so it gets its DMA-capable buffers first
+  (fixed "wifi: Expected to init 4 rx buffer, actual is 0")
+- LVGL draw buffers in PSRAM
+
+Bluetooth is now the biggest remaining consumer (~66 KB). HTTPS (40+ KB in one block)
+is still not realistic, so Open-Meteo stays on plain HTTP.
+
+NimBLE trimming was tried (peripheral and broadcaster roles off, 1 connection,
+`CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL 1`): **no measurable RAM gain** (+0.3 KB).
+Almost all of Bluetooth's ~66 KB is the radio controller, which is precompiled into the
+ESP32 Arduino core. Shrinking it would need a custom core build (own `sdkconfig`),
+which is not worth it at 54 KB free.
 
 ## Memory
 
@@ -85,10 +98,17 @@ Before and after each change:
 
 ## Plan
 
+- [x] WiFi before Bluetooth at startup; Bluetooth scanning paused while WiFi joins;
+      WiFi failure reason shown in Settings and on the Serial Monitor
+- [x] `lv_conf.h`: memory pool to PSRAM (1)
 - [ ] Step 1: performance log + `DEBUG_LOG` switch (5)
 - [ ] Step 2: visible-tab-only updates, paused animations (6); JSON changes (3)
-- [ ] Step 3: `lv_conf.h` — memory pool to PSRAM (1), touch read period (7)
-- [ ] Step 4: draw buffers back to internal RAM (8), trim stacks (4), optionally NimBLE (2)
+- [ ] Step 3: `lv_conf.h` touch read period (7)
+- [x] NimBLE trimming (2): tried, no measurable gain (see above)
+- [ ] Step 4: draw buffers back to internal RAM (8), trim stacks (4)
+
+Remember: `lv_conf.h` and `nimconfig.h` edits live in the libraries folder, are shared
+by all sketches, and are lost when the library is updated.
 
 Steps 1–2 are code changes in this project; step 3 is in your `lv_conf.h`;
 step 4 depends on the measurements.

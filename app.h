@@ -45,12 +45,18 @@
 #define LV_KEYBOARD_CTRL_BTN_FLAGS (LV_BTNMATRIX_CTRL_NO_REPEAT | LV_BTNMATRIX_CTRL_CLICK_TRIG | LV_BTNMATRIX_CTRL_CHECKED)
 #endif
 
+/* Big clock font for the screen saver: DejaVu Sans 96 px, digits, ':' and '-' only
+   (font_clock_96.c, generated - the largest built-in LVGL font is 48 px) */
+LV_FONT_DECLARE(font_clock_96)
+#define FONT_SAVER (&font_clock_96)
+
 #define DEG "\xC2\xB0"  // degree sign (UTF-8)
 #define NO_NET_TEXT "Press Scan"
 #define NO_NET_FOUND "No networks found"
 #define KB_H 220  // on-screen keyboard height
 
 #define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
+#define ENABLE_BMS 1            // default for the Battery feature switch (Settings)
 #define SAVER_TIMEOUT_MS 30000  // screen saver after this long without touch
 #define SAVER_COLOR 0x505050    // screen saver clock color (dim grey)
 
@@ -61,7 +67,8 @@
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
 #define RELAY_HOLD_MS 1000    // "hold to switch" relays: how long to hold the button
-#define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery tab
+#define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery and Shelly pages
+#define MAX_SHELLY 4          // Shelly devices that can be paired
 #define BMS_MAX_CELLS 16
 #define BMS_MAX_TEMPS 6
 
@@ -160,6 +167,22 @@ struct VicData {
   uint16_t alarm;           // inverter alarm bits
 };
 
+/* Shelly device over BLE RPC, saved to flash as one block */
+struct ShellyCfg {
+  bool used;
+  uint8_t addr_type;
+  char mac[18];
+  char name[24];
+};
+
+/* Live values of one Shelly device */
+struct ShellyData {
+  bool connected, valid, on;
+  float power, voltage, current;  // NAN if the device doesn't measure
+  uint32_t updated;
+  char status[64];
+};
+
 /* Relays on an external PCF8574, saved to flash as one block */
 struct RelayCfg {
   uint8_t addr;     // 0 = not used, else 0x20-0x27 / 0x38-0x3F
@@ -188,6 +211,7 @@ struct BmsSeen {
 /* Decoded BMS values (JBD protocol) and connection info */
 struct BmsData {
   bool connected, is_jbd, valid, cells_valid;
+  bool has_fets;  // JBD reports the charge/discharge switches; ECO-WORTHY does not
   uint32_t updated;  // millis() of last basic-info frame
   float volt, curr, remain_ah, nominal_ah;
   int cycles, soc;
@@ -217,6 +241,7 @@ extern VicData vic_data[MAX_VIC];
 extern VicSeen vic_seen[MAX_VIC_SEEN];
 
 extern BmsCfg bms_cfg;
+extern ShellyCfg shelly_cfg[MAX_SHELLY];
 extern RelayCfg relay_cfg;
 extern uint8_t relay_state;      // bit set = relay ON
 extern uint8_t relay_hold_mask;  // bit set = relay needs "hold to switch"
@@ -224,8 +249,14 @@ extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web;
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly;
 extern volatile bool scan_restart;
+
+/* Features that can be switched off in Settings (services stop too) */
+extern volatile bool feat_ruuvi;   // Temp tab: RuuviTag reading
+extern volatile bool feat_relays;  // Relays tab: PCF8574
+extern volatile bool feat_bms;     // Battery tab: BMS connection
+extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth (default off)
 
 extern volatile uint8_t scan_interval_s;  // BLE scan interval, 1-10 s (1 = continuous)
 extern volatile uint8_t bl_normal;        // backlight %, normal use
@@ -250,7 +281,8 @@ void board_init();  // IO expander, touch, display, LVGL
 void set_backlight(uint8_t pct);
 
 /* net.cpp */
-void net_start();  // starts the network task (WiFi, NTP, weather, flash writes)
+void net_start();                     // starts the network task (WiFi, NTP, weather, flash writes)
+bool net_wait_wifi_init(uint32_t ms);  // waits until the WiFi driver is initialised
 
 /* web.cpp */
 void web_service();           // call from loop(): starts the web server once WiFi is up, then serves requests
@@ -283,6 +315,13 @@ void bms_get(BmsData *out);                      // copy of the current data
 int bms_get_seen(BmsSeen *out, int max);         // copy of the device list
 const char *bms_protection_text(uint16_t bits);  // NULL = no protection active
 
+/* shelly.cpp (Shelly devices over BLE RPC; off until switched on in Settings) */
+void shelly_start();
+void shelly_get(int idx, ShellyData *out);
+void shelly_set(int idx, bool on);  // switch a device on or off
+void shelly_add(const char *mac, uint8_t addr_type, const char *name);
+void shelly_remove(int idx);
+
 /* relays.cpp */
 uint8_t relay_mask();
 bool relay_apply();      // write relay_state to the PCF8574
@@ -294,7 +333,7 @@ int i2c_scan(char *out, size_t len);  // returns number of devices found
 /* UI                                                                 */
 /* ================================================================== */
 /* ui_common.cpp */
-extern lv_obj_t *tab_power, *tab_battery, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
+extern lv_obj_t *tab_home, *tab_power, *tab_battery, *tab_relays, *tab_shelly, *tab_temp, *tab_weather, *tab_settings, *kb;
 void build_ui();
 void kb_show(lv_obj_t *ta);
 void kb_hide();
@@ -302,9 +341,15 @@ lv_obj_t *make_row(lv_obj_t *parent, lv_flex_align_t main_align);
 lv_obj_t *make_btn(lv_obj_t *parent, const char *txt, lv_event_cb_t cb);
 lv_obj_t *make_ta(lv_obj_t *parent, const char *placeholder, void (*on_ready)() = nullptr, bool hex = false);
 lv_obj_t *make_heading(lv_obj_t *parent, const char *txt);
+lv_obj_t *make_section(lv_obj_t *parent, const char *title);  // card with a heading, for Settings
+lv_obj_t *make_switch_row(lv_obj_t *parent, const char *text, bool on, lv_event_cb_t cb);
 lv_obj_t *make_grey_label(lv_obj_t *parent);
 lv_obj_t *make_slider(lv_obj_t *parent, int min, int max, int val, lv_event_cb_t cb);
 void set_label(lv_obj_t *l, const char *txt);  // only redraws when the text changes
+
+/* ui_home.cpp */
+void build_home_tab();
+void home_timer_cb(lv_timer_t *t);
 
 /* ui_power.cpp */
 void build_power_tab();
@@ -317,7 +362,14 @@ void battery_timer_cb(lv_timer_t *t);
 /* ui_relays.cpp */
 void build_relays_tab();
 void settings_relays(lv_obj_t *parent);
+void relay_tab_refresh();
 void settings_i2c(lv_obj_t *parent);
+
+/* ui_shelly.cpp */
+void build_shelly_tab();
+void shelly_timer_cb(lv_timer_t *t);
+void settings_shelly(lv_obj_t *parent);
+void shelly_settings_refresh(const BmsSeen *seen, int n, uint32_t now);
 
 /* ui_temp.cpp */
 void build_temp_tab();

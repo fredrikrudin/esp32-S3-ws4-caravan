@@ -279,38 +279,50 @@ static void scan_slider_cb(lv_event_t *e) {
   }
 }
 
+/* ---------- feature switches ---------- */
+static void feat_ruuvi_cb(lv_event_t *e) {
+  feat_ruuvi = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+}
+
+static void feat_bms_cb(lv_event_t *e) {
+  feat_bms = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+}
+
 /* ---------- build ---------- */
 void build_settings_tab() {
   lv_obj_set_flex_flow(tab_settings, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(tab_settings, 12, 0);
+  lv_obj_set_style_pad_row(tab_settings, 16, 0);  // space between the section cards
+  lv_obj_set_style_pad_bottom(tab_settings, 16, 0);
 
-  /* WiFi */
-  make_heading(tab_settings, LV_SYMBOL_WIFI "  WiFi");
+  /* ---- WiFi ---- */
+  lv_obj_t *sec = make_section(tab_settings, LV_SYMBOL_WIFI "  WiFi");
 
-  lv_obj_t *row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  lv_obj_t *row = make_row(sec, LV_FLEX_ALIGN_START);
   dd_ssid = lv_dropdown_create(row);
   lv_obj_set_flex_grow(dd_ssid, 1);
   lv_dropdown_set_options(dd_ssid, g.ssid[0] ? g.ssid : NO_NET_TEXT);
   make_btn(row, LV_SYMBOL_REFRESH " Scan", scan_btn_cb);
 
-  ta_pass = make_ta(tab_settings, "Password", connect_now);
+  ta_pass = make_ta(sec, "Password", connect_now);
   lv_textarea_set_password_mode(ta_pass, true);
   lv_obj_set_width(ta_pass, LV_PCT(100));
   lv_textarea_set_text(ta_pass, g.pass);
 
-  row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  row = make_row(sec, LV_FLEX_ALIGN_START);
   make_btn(row, LV_SYMBOL_OK " Connect", connect_btn_cb);
   lbl_wifi_status = lv_label_create(row);
   lv_obj_set_flex_grow(lbl_wifi_status, 1);
   lv_label_set_long_mode(lbl_wifi_status, LV_LABEL_LONG_WRAP);
   lv_label_set_text(lbl_wifi_status, "");
 
-  /* Web page */
-  make_heading(tab_settings, LV_SYMBOL_EYE_OPEN "  Web page");
-  lbl_web = lv_label_create(tab_settings);
+  /* ---- Web page ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_EYE_OPEN "  Web page");
+  lbl_web = lv_label_create(sec);
   lv_obj_set_width(lbl_web, LV_PCT(100));
   lv_label_set_long_mode(lbl_web, LV_LABEL_LONG_WRAP);
-  row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  row = make_row(sec, LV_FLEX_ALIGN_START);
   ta_webpass = make_ta(row, "Password (empty = no login)", webpass_save_now);
   lv_textarea_set_password_mode(ta_webpass, true);
   lv_textarea_set_max_length(ta_webpass, 32);
@@ -319,37 +331,36 @@ void build_settings_tab() {
   make_btn(row, LV_SYMBOL_SAVE " Save", webpass_save_cb);
   update_web_label();
 
-  /* Location */
-  make_heading(tab_settings, LV_SYMBOL_GPS "  Weather location");
-
-  row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  /* ---- Weather ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_GPS "  Weather location");
+  row = make_row(sec, LV_FLEX_ALIGN_START);
   ta_city = make_ta(row, "City (or City, Country)", locate_now);
   lv_obj_set_flex_grow(ta_city, 1);
   lv_textarea_set_text(ta_city, g.city);
   make_btn(row, LV_SYMBOL_OK " Set", locate_btn_cb);
-
-  lbl_loc = lv_label_create(tab_settings);
+  lbl_loc = lv_label_create(sec);
   lv_obj_set_width(lbl_loc, LV_PCT(100));
   lv_label_set_long_mode(lbl_loc, LV_LABEL_LONG_WRAP);
   lv_label_set_text(lbl_loc, "");
 
-  /* RuuviTags */
-  make_heading(tab_settings, LV_SYMBOL_BLUETOOTH "  RuuviTags (max 3)");
+  /* ---- Temperature: RuuviTags ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_BLUETOOTH "  Temperature (RuuviTags)");
+  make_switch_row(sec, "Read RuuviTags", feat_ruuvi, feat_ruuvi_cb);
 
-  row = make_row(tab_settings, LV_FLEX_ALIGN_START);
+  row = make_row(sec, LV_FLEX_ALIGN_START);
   dd_ruuvi = lv_dropdown_create(row);
   lv_obj_set_flex_grow(dd_ruuvi, 1);
   lv_dropdown_set_options(dd_ruuvi, "Searching...");
   make_btn(row, LV_SYMBOL_PLUS " Add", ruuvi_add_cb);
 
-  ruuvi_list = lv_obj_create(tab_settings);
+  ruuvi_list = lv_obj_create(sec);
   lv_obj_remove_style_all(ruuvi_list);
   lv_obj_set_size(ruuvi_list, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(ruuvi_list, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(ruuvi_list, 6, 0);
   lv_obj_clear_flag(ruuvi_list, LV_OBJ_FLAG_SCROLLABLE);
 
-  ruuvi_editor = lv_obj_create(tab_settings);
+  ruuvi_editor = lv_obj_create(sec);
   lv_obj_set_size(ruuvi_editor, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(ruuvi_editor, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(ruuvi_editor, 8, 0);
@@ -365,30 +376,39 @@ void build_settings_tab() {
   lv_obj_set_style_bg_color(del, lv_palette_main(LV_PALETTE_RED), 0);
   make_btn(row, "Cancel", ruuvi_cancel_cb);
 
-  lbl_ruuvi_msg = lv_label_create(tab_settings);
+  lbl_ruuvi_msg = lv_label_create(sec);
   lv_obj_set_width(lbl_ruuvi_msg, LV_PCT(100));
   lv_label_set_long_mode(lbl_ruuvi_msg, LV_LABEL_LONG_WRAP);
   lv_obj_set_style_text_color(lbl_ruuvi_msg, lv_palette_main(LV_PALETTE_ORANGE), 0);
   lv_label_set_text(lbl_ruuvi_msg, "");
-
   ruuvi_rebuild_list();
 
-  /* Display */
-  make_heading(tab_settings, LV_SYMBOL_IMAGE "  Display");
-  lbl_bl = lv_label_create(tab_settings);
-  sl_bl = make_slider(tab_settings, 5, 100, bl_normal, bl_slider_cb);  // min 5% so the screen never goes black
-  lbl_bl_saver = lv_label_create(tab_settings);
-  sl_bl_saver = make_slider(tab_settings, 0, 100, bl_saver, bl_slider_cb);
-  update_bl_labels();
+  /* ---- Battery ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_BATTERY_FULL "  Battery (BMS)");
+  make_switch_row(sec, "Read the battery BMS", feat_bms, feat_bms_cb);
+  lv_obj_t *hint = make_grey_label(sec);
+  lv_obj_set_width(hint, LV_PCT(100));
+  lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(hint, "Choose the battery on the Battery tab. Close the battery's phone app first: it accepts only one connection.");
 
-  /* Sensor scan interval (RuuviTag + Victron) */
-  make_heading(tab_settings, LV_SYMBOL_REFRESH "  Sensor scan interval");
-  lbl_scan = lv_label_create(tab_settings);
-  make_slider(tab_settings, 1, 10, scan_interval_s, scan_slider_cb);
-  update_scan_label();
-
-  /* Sections in their own files */
+  /* ---- sections in their own files ---- */
+  settings_shelly(tab_settings);
   settings_victron(tab_settings);
   settings_relays(tab_settings);
+
+  /* ---- Display ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_IMAGE "  Display");
+  lbl_bl = lv_label_create(sec);
+  sl_bl = make_slider(sec, 5, 100, bl_normal, bl_slider_cb);  // min 5% so the screen never goes black
+  lbl_bl_saver = lv_label_create(sec);
+  sl_bl_saver = make_slider(sec, 0, 100, bl_saver, bl_slider_cb);
+  update_bl_labels();
+
+  /* ---- Sensor scan interval ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_REFRESH "  Sensor scan interval");
+  lbl_scan = lv_label_create(sec);
+  make_slider(sec, 1, 10, scan_interval_s, scan_slider_cb);
+  update_scan_label();
+
   settings_i2c(tab_settings);
 }

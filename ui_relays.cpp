@@ -21,7 +21,8 @@ static void relay_refresh_ui() {
     if (hold_start[i]) lv_label_set_text_fmt(relay_lbl[i], "%s\nHold...", relay_cfg.names[i]);
     else lv_label_set_text_fmt(relay_lbl[i], "%s\n%s", relay_cfg.names[i], on ? "ON" : "OFF");
   }
-  if (!relay_cfg.addr) lv_label_set_text(lbl_relay_status, "No relay board set up.\nChoose its I2C address under Settings.");
+  if (!feat_relays) lv_label_set_text(lbl_relay_status, "Relays are switched off.\nSwitch them on under Settings.");
+  else if (!relay_cfg.addr) lv_label_set_text(lbl_relay_status, "No relay board set up.\nChoose its I2C address under Settings.");
   else if (!pcf_ok) lv_label_set_text_fmt(lbl_relay_status, LV_SYMBOL_WARNING " No answer from PCF8574 at 0x%02X", relay_cfg.addr);
   else lv_label_set_text_fmt(lbl_relay_status, "PCF8574 at 0x%02X", relay_cfg.addr);
 }
@@ -71,7 +72,7 @@ static void relay_rebuild_tab() {
     relay_btn[i] = relay_lbl[i] = NULL;
     hold_start[i] = 0;
   }
-  if (relay_cfg.addr) {
+  if (feat_relays && relay_cfg.addr) {
     for (int i = 0; i < relay_cfg.count; i++) {
       lv_obj_t *b = lv_btn_create(relay_grid);
       lv_obj_set_size(b, LV_PCT(48), 78);
@@ -105,6 +106,18 @@ void build_relays_tab() {
   lv_obj_clear_flag(relay_grid, LV_OBJ_FLAG_SCROLLABLE);
   relay_rebuild_tab();
   lv_timer_create(relay_hold_timer_cb, 50, NULL);
+}
+
+/* Redraws the Relays tab after a settings change */
+void relay_tab_refresh() {
+  relay_rebuild_tab();
+}
+
+static void relays_enable_cb(lv_event_t *e) {
+  feat_relays = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  if (feat_relays) relay_read_back();  // pick up the relays' current state again
+  relay_rebuild_tab();
 }
 
 /* ---------- Settings: relay board ---------- */
@@ -188,8 +201,9 @@ static void relay_rename_cb(lv_event_t *e) {
   relay_rename_now();
 }
 
-void settings_relays(lv_obj_t *parent) {
-  make_heading(parent, LV_SYMBOL_POWER "  Relay board (PCF8574)");
+void settings_relays(lv_obj_t *page) {
+  lv_obj_t *parent = make_section(page, LV_SYMBOL_POWER "  Relays (PCF8574)");
+  make_switch_row(parent, "Use the relay board", feat_relays, relays_enable_cb);
 
   lv_obj_t *row = make_row(parent, LV_FLEX_ALIGN_START);
   lv_label_set_text(lv_label_create(row), "I2C address");
@@ -239,8 +253,8 @@ static void i2c_scan_cb(lv_event_t *e) {
   lv_label_set_text(lbl_i2c_scan, n ? out : "No I2C devices found");
 }
 
-void settings_i2c(lv_obj_t *parent) {
-  make_heading(parent, LV_SYMBOL_LIST "  I2C devices");
+void settings_i2c(lv_obj_t *page) {
+  lv_obj_t *parent = make_section(page, LV_SYMBOL_LIST "  I2C devices");
   make_btn(parent, LV_SYMBOL_REFRESH " Scan I2C bus", i2c_scan_cb);
   lbl_i2c_scan = lv_label_create(parent);
   lv_label_set_text(lbl_i2c_scan, "");

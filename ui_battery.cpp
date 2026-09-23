@@ -86,6 +86,7 @@ static void refresh_device_list(uint32_t now) {
 
   BmsSeen list[MAX_BMS_SEEN];
   int n = bms_get_seen(list, MAX_BMS_SEEN);
+  shelly_settings_refresh(list, n, now);  // the Shelly pairing list uses the same scan
 
   /* likely batteries first, then the rest; skip devices gone for > 2 min */
   static char last_opts[MAX_BMS_SEEN * 48] = "";
@@ -118,8 +119,8 @@ void battery_timer_cb(lv_timer_t *t) {
   uint32_t now = millis();
   char b[160];
 
-  set_label(lbl_bms_status, d.status);
-  bool fresh = d.valid && now - d.updated < 30000;
+  set_label(lbl_bms_status, feat_bms ? d.status : "Battery reading is switched off. Switch it on under Settings.");
+  bool fresh = feat_bms && d.valid && now - d.updated < 30000;
 
   if (!fresh) {
     set_label(lbl_soc, "--%");
@@ -132,10 +133,25 @@ void battery_timer_cb(lv_timer_t *t) {
     snprintf(b, sizeof(b), "%d%%", d.soc);
     set_label(lbl_soc, b);
 
-    snprintf(b, sizeof(b), "%.2f V   %+.1f A", d.volt, d.curr);
+    /* not every BMS reports current, temperature or the switches */
+    if (!isnan(d.curr)) snprintf(b, sizeof(b), "%.2f V   %+.1f A", d.volt, d.curr);
+    else snprintf(b, sizeof(b), "%.2f V", d.volt);
     set_label(lbl_main, b);
 
-    snprintf(b, sizeof(b), "%+.0f W   %.1f / %.0f Ah   %d cycles", d.volt * d.curr, d.remain_ah, d.nominal_ah, d.cycles);
+    b[0] = 0;
+    if (!isnan(d.curr)) {
+      char w[24];
+      snprintf(w, sizeof(w), "%+.0f W   ", d.volt * d.curr);
+      strlcat(b, w, sizeof(b));
+    }
+    char cap[48];
+    snprintf(cap, sizeof(cap), "%.1f / %.0f Ah", d.remain_ah, d.nominal_ah);
+    strlcat(b, cap, sizeof(b));
+    if (d.cycles) {
+      char cy[24];
+      snprintf(cy, sizeof(cy), "   %d cycles", d.cycles);
+      strlcat(b, cy, sizeof(b));
+    }
     set_label(lbl_line1, b);
 
     b[0] = 0;
@@ -148,14 +164,16 @@ void battery_timer_cb(lv_timer_t *t) {
       }
       strlcat(b, "   ", sizeof(b));
     }
-    char fets[48];
-    snprintf(fets, sizeof(fets), "Charge %s  Discharge %s", d.chg_fet ? "ON" : "OFF", d.dsg_fet ? "ON" : "OFF");
-    strlcat(b, fets, sizeof(b));
+    if (d.has_fets) {
+      char fets[48];
+      snprintf(fets, sizeof(fets), "Charge %s  Discharge %s", d.chg_fet ? "ON" : "OFF", d.dsg_fet ? "ON" : "OFF");
+      strlcat(b, fets, sizeof(b));
+    }
     set_label(lbl_line2, b);
 
     if (d.cells_valid && d.ncell) {
       float mn = d.cell[0], mx = d.cell[0];
-      strcpy(b, "Cells");
+      strcpy(b, d.ncell > 4 ? "" : "Cells");
       for (int i = 0; i < d.ncell; i++) {
         char c[12];
         snprintf(c, sizeof(c), "  %.3f", d.cell[i]);

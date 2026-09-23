@@ -1,10 +1,14 @@
-/* Battery BMS over BLE - EXPERIMENTAL.
+/* Battery BMS over BLE.
  *
- * Connects to the battery chosen on the Battery tab and:
- *  - lists all GATT services and subscribes to every notification (diagnostics,
- *    logged to the Serial Monitor), so unknown protocols can be identified
- *  - if the JBD service (0xFF00) is present, polls it with the JBD protocol
- *    (used by many ECO-WORTHY batteries) and decodes the answers.
+ * Two protocols are supported, both used by ECO-WORTHY batteries:
+ *  - ECO-WORTHY / BWOB: service 0x0001, write 0x0002, notify 0x0003.
+ *    Commands AA 00/20/21/22; reply 0x21 has voltage, SOC and capacity,
+ *    reply 0x22 has the cell voltages.
+ *  - JBD (Jiabaida): service 0xFF00, write 0xFF02, request DD A5 <cmd> ...
+ *    If no JBD characteristic is found, every writable one is tried in turn.
+ *
+ * All GATT services are listed and every notification is logged to the Serial
+ * Monitor, so an unknown battery can still be identified.
  *
  * Only one BLE connection per battery is possible: close the ECO-WORTHY app first.
  * Read-only: nothing is ever written to the BMS except the two JBD read requests.
@@ -18,7 +22,20 @@ static BmsSeen seen[MAX_BMS_SEEN];
 
 static volatile bool connect_req = false;
 static NimBLEClient *client = nullptr;
-static NimBLERemoteCharacteristic *jbd_write = nullptr;
+
+/* Every writable characteristic is a candidate for the JBD request; the one that
+   produces a valid answer wins. ECO-WORTHY batteries use the JBD (Jiabaida) protocol,
+   but not all of them expose it on the documented 0xFF00/0xFF02 IDs. */
+#define MAX_WRITE_CHRS 8
+static NimBLERemoteCharacteristic *write_chr[MAX_WRITE_CHRS];
+static int write_chr_count = 0;
+static int write_chr_idx = 0;
+static volatile bool answered = false;  // a valid frame of either protocol arrived
+
+enum BmsProto { PROTO_PROBE_JBD,
+                PROTO_EW };
+static BmsProto proto = PROTO_PROBE_JBD;
+static NimBLERemoteCharacteristic *ew_write = nullptr;
 
 #define BMS_POLL_MS 5000     // JBD request interval
 #define BMS_RETRY_MS 30000   // reconnect interval after a failure
@@ -122,6 +139,76 @@ void bms_connect_to(const char *mac, uint8_t addr_type, const char *name) {
   connect_req = true;
 }
 
+/* ---------- ECO-WORTHY / BWOB protocol ----------
+   Frame: AA <cmd> <len> <payload len bytes> <2 bytes checksum>
+   The commands are fixed byte sequences, so no checksum has to be calculated. */
+static const uint8_t EW_INIT[5] = { 0xAA, 0x00, 0x00, 0x00, 0x00 };
+static const uint8_t EW_CMD20[5] = { 0xAA, 0x20, 0x00, 0x20, 0x00 };
+static const uint8_t EW_CMD21[5] = { 0xAA, 0x21, 0x00, 0x21, 0x00 };
+static const uint8_t EW_CMD22[5] = { 0xAA, 0x22, 0x00, 0x22, 0x00 };
+
+static uint8_t ew_buf[128];
+static size_t ew_len = 0;
+
+static uint32_t le16(const uint8_t *p) {
+  return p[0] | (p[1] << 8);
+}
+static uint32_t le32(const uint8_t *p) {
+  return p[0] | (p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static void ew_decode(uint8_t cmd, const uint8_t *p, size_t n) {
+  USBSerial.printf("BMS EW frame cmd 0x%02X, %u bytes payload\n", cmd, (unsigned)n);
+  if (cmd == 0x21 && n >= 18) {
+    xSemaphoreTake(bms_mtx, portMAX_DELAY);
+    bms.volt = le16(p) / 1000.0f;
+    bms.soc = p[8];
+    bms.remain_ah = le32(p + 10) / 1000.0f;
+    bms.nominal_ah = le32(p + 14) / 1000.0f;
+    bms.valid = true;
+    bms.updated = millis();
+    xSemaphoreGive(bms_mtx);
+    answered = true;
+  } else if (cmd == 0x22 && n >= 17) {
+    float cells[8];
+    for (int i = 0; i < 8; i++) cells[i] = ((p[1 + i * 2] << 8) | p[2 + i * 2]) / 1000.0f;  // big endian
+    float mn = cells[0], mx = cells[0];
+    for (int i = 1; i < 8; i++) {
+      if (cells[i] < mn) mn = cells[i];
+      if (cells[i] > mx) mx = cells[i];
+    }
+    if (mn < 2.5f || mx > 3.8f || mx - mn > 0.2f) return;  // implausible: ignore this frame
+    xSemaphoreTake(bms_mtx, portMAX_DELAY);
+    for (int i = 0; i < 8; i++) bms.cell[i] = cells[i];
+    bms.ncell = 8;
+    bms.cells_valid = true;
+    xSemaphoreGive(bms_mtx);
+    answered = true;
+  }
+}
+
+static void ew_feed(const uint8_t *d, size_t n) {
+  if (ew_len + n > sizeof(ew_buf)) ew_len = 0;
+  memcpy(ew_buf + ew_len, d, n);
+  ew_len += n;
+
+  size_t pos = 0;
+  while (ew_len - pos >= 3) {
+    if (ew_buf[pos] != 0xAA) {  // resynchronise
+      pos++;
+      continue;
+    }
+    size_t frame_len = 3 + ew_buf[pos + 2] + 2;
+    if (ew_len - pos < frame_len) break;  // wait for the rest
+    ew_decode(ew_buf[pos + 1], ew_buf + pos + 3, frame_len - 5);
+    pos += frame_len;
+  }
+  if (pos) {
+    memmove(ew_buf, ew_buf + pos, ew_len - pos);
+    ew_len -= pos;
+  }
+}
+
 /* ---------- JBD protocol ----------
    Request:  DD A5 <cmd> 00 <chk_hi> <chk_lo> 77
    Response: DD <cmd> <status> <len> <data...> <chk_hi> <chk_lo> 77
@@ -135,6 +222,7 @@ static uint16_t be16(const uint8_t *p) {
 
 static void jbd_parse(uint8_t cmd, const uint8_t *p, size_t n) {
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
+  answered = true;
   if (cmd == 0x03 && n >= 23) {  // basic info
     bms.volt = be16(p) / 100.0f;
     bms.curr = (int16_t)be16(p + 2) / 100.0f;
@@ -145,6 +233,7 @@ static void jbd_parse(uint8_t cmd, const uint8_t *p, size_t n) {
     bms.soc = p[19];
     bms.chg_fet = p[20] & 0x01;
     bms.dsg_fet = p[20] & 0x02;
+    bms.has_fets = true;
     bms.ntemp = 0;
     for (int i = 0; i < p[22] && i < BMS_MAX_TEMPS && 24 + 2 * i < (int)n; i++)
       bms.temp[bms.ntemp++] = ((int)be16(p + 23 + 2 * i) - 2731) / 10.0f;
@@ -192,10 +281,11 @@ static void jbd_feed(const uint8_t *d, size_t n) {
 }
 
 static void jbd_request(uint8_t cmd) {
-  if (!jbd_write) return;
+  if (write_chr_idx >= write_chr_count) return;
+  NimBLERemoteCharacteristic *chr = write_chr[write_chr_idx];
   uint16_t chk = (uint16_t)(0x10000 - cmd);  // sum over cmd and length (0)
   uint8_t req[7] = { 0xDD, 0xA5, cmd, 0x00, (uint8_t)(chk >> 8), (uint8_t)chk, 0x77 };
-  jbd_write->writeValue(req, sizeof(req), !jbd_write->canWriteNoResponse());
+  chr->writeValue(req, sizeof(req), !chr->canWriteNoResponse());
 }
 
 /* ---------- notifications (NimBLE host task) ---------- */
@@ -208,7 +298,9 @@ static void notify_cb(NimBLERemoteCharacteristic *chr, uint8_t *data, size_t len
   strlcpy(bms.last_frame, hex, sizeof(bms.last_frame));
   xSemaphoreGive(bms_mtx);
 
-  if (chr->getUUID() == NimBLEUUID((uint16_t)0xFF01)) jbd_feed(data, len);
+  /* each parser checks its own start byte, so only real frames are decoded */
+  if (proto == PROTO_EW) ew_feed(data, len);
+  else jbd_feed(data, len);
 }
 
 /* ---------- connection ---------- */
@@ -223,7 +315,11 @@ static bool do_connect() {
   bms.connected = bms.is_jbd = bms.valid = bms.cells_valid = false;
   bms.services[0] = bms.last_frame[0] = 0;
   xSemaphoreGive(bms_mtx);
-  jbd_write = nullptr;
+  write_chr_count = write_chr_idx = 0;
+  answered = false;
+  ew_write = nullptr;
+  ew_len = 0;
+  proto = PROTO_PROBE_JBD;
 
   if (!client) {
     client = NimBLEDevice::createClient();
@@ -258,28 +354,52 @@ static bool do_connect() {
                        (chr->canNotify() || chr->canIndicate()) ? " notify" : "");
       if (chr->canNotify()) chr->subscribe(true, notify_cb);
       else if (chr->canIndicate()) chr->subscribe(false, notify_cb);
+      if ((chr->canWrite() || chr->canWriteNoResponse()) && write_chr_count < MAX_WRITE_CHRS) {
+        /* the documented JBD characteristic goes first, the rest are tried in turn */
+        if (chr->getUUID() == NimBLEUUID((uint16_t)0xFF02) && write_chr_count) {
+          write_chr[write_chr_count++] = write_chr[0];
+          write_chr[0] = chr;
+        } else {
+          write_chr[write_chr_count++] = chr;
+        }
+      }
     }
   }
-
-  /* JBD? */
-  NimBLERemoteService *jbd = client->getService(NimBLEUUID((uint16_t)0xFF00));
-  if (jbd) jbd_write = jbd->getCharacteristic(NimBLEUUID((uint16_t)0xFF02));
+  /* ECO-WORTHY / BWOB: service 0x0001 with write 0x0002 and notify 0x0003 */
+  NimBLERemoteService *ew = client->getService(NimBLEUUID((uint16_t)0x0001));
+  if (ew) ew_write = ew->getCharacteristic(NimBLEUUID((uint16_t)0x0002));
+  if (ew_write) {
+    proto = PROTO_EW;
+    USBSerial.println("BMS: ECO-WORTHY service found (0x0001/0x0002)");
+  } else {
+    USBSerial.printf("BMS: %d writable characteristics to try (JBD)\n", write_chr_count);
+  }
 
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   bms.connected = true;
-  bms.is_jbd = (jbd_write != nullptr);
   strlcpy(bms.services, services, sizeof(bms.services));
   xSemaphoreGive(bms_mtx);
 
-  if (jbd_write) set_status("Connected to %s (JBD protocol)", cfg.name);
-  else set_status("Connected to %s. Unknown protocol - see Serial log", cfg.name);
+  if (ew_write || write_chr_count) set_status("Connected to %s - asking for data...", cfg.name);
+  else set_status("Connected to %s, but it accepts no requests - see Serial log", cfg.name);
   return true;
 }
 
 static void bms_task(void *arg) {
   uint32_t next_try = 0, next_poll = 0;
-  bool had_target = false;
+  int tries = 0;
+  bool had_target = false, reported = false;
   for (;;) {
+    if (!feat_bms) {  // switched off in Settings
+      if (client && client->isConnected()) {
+        client->disconnect();
+        set_status("Battery reading is switched off in Settings");
+      }
+      had_target = false;
+      vTaskDelay(pdMS_TO_TICKS(500));
+      continue;
+    }
+
     LOCK();
     bool have_target = bms_cfg.mac[0] != 0;
     UNLOCK();
@@ -302,13 +422,55 @@ static void bms_task(void *arg) {
       connect_req = false;
       if (!do_connect()) next_try = millis() + BMS_RETRY_MS;
       next_poll = millis() + 500;
+      tries = 0;
+      reported = false;
     }
 
-    if (connected && jbd_write && (int32_t)(millis() - next_poll) >= 0) {
-      jbd_request(0x03);  // basic info
-      vTaskDelay(pdMS_TO_TICKS(400));
-      jbd_request(0x04);  // cell voltages
-      next_poll = millis() + BMS_POLL_MS;
+    if (connected && (ew_write || write_chr_count) && (int32_t)(millis() - next_poll) >= 0) {
+      if (proto == PROTO_EW) {
+        bool resp = !ew_write->canWriteNoResponse();
+        if (!answered) {  // wake-up sequence, as the phone app sends it
+          ew_write->writeValue(EW_INIT, sizeof(EW_INIT), resp);
+          vTaskDelay(pdMS_TO_TICKS(300));
+          ew_write->writeValue(EW_CMD20, sizeof(EW_CMD20), resp);
+          vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        ew_write->writeValue(EW_CMD21, sizeof(EW_CMD21), resp);  // voltage, SOC, capacity
+        vTaskDelay(pdMS_TO_TICKS(500));
+        ew_write->writeValue(EW_CMD22, sizeof(EW_CMD22), resp);  // cell voltages
+      } else {
+        jbd_request(0x03);  // basic info
+        vTaskDelay(pdMS_TO_TICKS(400));
+        jbd_request(0x04);  // cell voltages
+      }
+      next_poll = millis() + (answered ? BMS_POLL_MS : 1500);
+
+      if (answered && !reported) {  // first valid answer: now we know the protocol
+        reported = true;
+        xSemaphoreTake(bms_mtx, portMAX_DELAY);
+        bms.is_jbd = true;
+        xSemaphoreGive(bms_mtx);
+        BmsCfg c;
+        LOCK();
+        c = bms_cfg;
+        UNLOCK();
+        if (proto == PROTO_EW) set_status("Connected to %s (ECO-WORTHY protocol)", c.name);
+        else set_status("Connected to %s (JBD protocol, %s)", c.name,
+                        write_chr[write_chr_idx]->getUUID().toString().c_str());
+      } else if (!answered && proto == PROTO_PROBE_JBD && ++tries >= 3) {  // try the next characteristic
+        tries = 0;
+        write_chr_idx++;
+        if (write_chr_idx >= write_chr_count) {
+          write_chr_idx = 0;
+          BmsCfg c;
+          LOCK();
+          c = bms_cfg;
+          UNLOCK();
+          set_status("%s answers nothing we understand - see Serial log", c.name);
+        } else {
+          USBSerial.printf("BMS: trying characteristic %d of %d\n", write_chr_idx + 1, write_chr_count);
+        }
+      }
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -318,6 +480,10 @@ static void bms_task(void *arg) {
 void bms_start() {
   bms_mtx = xSemaphoreCreateMutex();
   memset(&bms, 0, sizeof(bms));
+#if ENABLE_BMS
   strlcpy(bms.status, "No battery chosen", sizeof(bms.status));
   xTaskCreatePinnedToCore(bms_task, "bms", 4096, NULL, 1, NULL, 0);
+#else
+  strlcpy(bms.status, "Battery connection is switched off (ENABLE_BMS 0 in app.h)", sizeof(bms.status));
+#endif
 }

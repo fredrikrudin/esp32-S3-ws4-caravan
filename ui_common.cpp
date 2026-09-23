@@ -2,7 +2,7 @@
    All LVGL code runs in the Arduino loop task only. */
 #include "app.h"
 
-lv_obj_t *tab_power, *tab_battery, *tab_relays, *tab_temp, *tab_weather, *tab_settings, *kb;
+lv_obj_t *tab_home, *tab_power, *tab_battery, *tab_relays, *tab_shelly, *tab_temp, *tab_weather, *tab_settings, *kb;
 static lv_coord_t settings_pad_bottom = 0;
 
 /* Hex keypad for the Victron encryption key */
@@ -89,6 +89,34 @@ lv_obj_t *make_heading(lv_obj_t *parent, const char *txt) {
   return l;
 }
 
+/* A Settings section: a card with a heading, so the page reads as groups */
+lv_obj_t *make_section(lv_obj_t *parent, const char *title) {
+  lv_obj_t *card = lv_obj_create(parent);
+  lv_obj_set_size(card, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_all(card, 14, 0);
+  lv_obj_set_style_pad_row(card, 10, 0);
+  lv_obj_set_style_radius(card, 8, 0);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *h = lv_label_create(card);
+  lv_label_set_text(h, title);
+  lv_obj_set_style_text_color(h, lv_palette_main(LV_PALETTE_BLUE), 0);
+  return card;
+}
+
+/* Label on the left, switch on the right */
+lv_obj_t *make_switch_row(lv_obj_t *parent, const char *text, bool on, lv_event_cb_t cb) {
+  lv_obj_t *row = make_row(parent, LV_FLEX_ALIGN_SPACE_BETWEEN);
+  lv_obj_t *l = lv_label_create(row);
+  lv_obj_set_flex_grow(l, 1);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(l, text);
+  lv_obj_t *sw = lv_switch_create(row);
+  if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+  lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, NULL);
+  return sw;
+}
+
 lv_obj_t *make_grey_label(lv_obj_t *parent) {
   lv_obj_t *l = lv_label_create(parent);
   lv_obj_set_style_text_color(l, lv_palette_main(LV_PALETTE_GREY), 0);
@@ -124,17 +152,21 @@ void build_ui() {
   lv_disp_set_theme(disp, th);
 
   lv_obj_t *tv = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 50);
+  tab_home = lv_tabview_add_tab(tv, LV_SYMBOL_HOME);  // start page
   tab_power = lv_tabview_add_tab(tv, "Power");
   tab_battery = lv_tabview_add_tab(tv, "Battery");
   tab_relays = lv_tabview_add_tab(tv, "Relays");
+  tab_shelly = lv_tabview_add_tab(tv, "Shelly");
   tab_temp = lv_tabview_add_tab(tv, "Temp");
   tab_weather = lv_tabview_add_tab(tv, "Weather");
   tab_settings = lv_tabview_add_tab(tv, LV_SYMBOL_SETTINGS);  // gear icon
   settings_pad_bottom = lv_obj_get_style_pad_bottom(tab_settings, LV_PART_MAIN);
 
+  build_home_tab();
   build_power_tab();
   build_battery_tab();
   build_relays_tab();
+  build_shelly_tab();
   build_temp_tab();
   build_weather_tab();
   build_settings_tab();
@@ -150,7 +182,9 @@ void build_ui() {
   lv_timer_create(clock_timer_cb, 500, NULL);
   lv_timer_create(net_poll_cb, 200, NULL);
   lv_timer_create(ruuvi_timer_cb, 1000, NULL);
+  lv_timer_create(home_timer_cb, 1000, NULL);
   lv_timer_create(power_timer_cb, 1000, NULL);
   lv_timer_create(battery_timer_cb, 1000, NULL);
+  lv_timer_create(shelly_timer_cb, 1000, NULL);
   lv_timer_create(saver_timer_cb, 500, NULL);
 }

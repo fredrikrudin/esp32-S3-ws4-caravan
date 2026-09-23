@@ -155,8 +155,8 @@ static void vic_add_cb(lv_event_t *e) {
   vic_open_editor(vic_dd_mac[i], vic_dd_type[i], -1);
 }
 
-void settings_victron(lv_obj_t *parent) {
-  make_heading(parent, LV_SYMBOL_CHARGE "  Victron devices");
+void settings_victron(lv_obj_t *page) {
+  lv_obj_t *parent = make_section(page, LV_SYMBOL_CHARGE "  Victron devices");
   lv_obj_t *hint = make_grey_label(parent);
   lv_obj_set_width(hint, LV_PCT(100));
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
