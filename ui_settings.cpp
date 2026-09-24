@@ -638,4 +638,15 @@ void build_settings_tab() {
   lv_label_set_long_mode(sd_hint, LV_LABEL_LONG_WRAP);
   lv_label_set_text(sd_hint, "Eject before pulling the card out. Files can be downloaded from the web page under /files. The backup contains WiFi and Victron keys, so keep the card safe. Restoring restarts the board.");
   update_sdlog_label();
+
+  /* ---- About ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_HOME "  About");
+  lv_obj_t *about = make_grey_label(sec);
+  lv_obj_set_width(about, LV_PCT(100));
+  lv_label_set_long_mode(about, LV_LABEL_LONG_WRAP);
+  /* LVGL's built-in fonts have no (c) sign and no a-umlaut, so plain ASCII here */
+  lv_label_set_text(about,
+                    "(c) " __DATE__ " " __TIME__ " Fredrik Rudin\n"
+                    "github.com/fredrikrudin/esp32-S3-ws4-caravan\n"
+                    "med hjalp av claude.ai Opus 5");
 }

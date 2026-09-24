@@ -2,7 +2,7 @@
 
 Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 touch board with the CH32V003 IO expander. Built with Arduino and LVGL 8.
 
-![Power tab](power-page.png)
+![Power tab](power-tab.png)
 
 *The Power tab with example values. Dots move along the lines where energy flows.*
 
@@ -103,6 +103,24 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 - **GFX Library for Arduino**, **SensorLib** and **WS_CH32_IO**: the versions bundled with Waveshare's ESP32-S3-Touch-LCD-4 examples
 - **ArduinoJson** v7
 - **NimBLE-Arduino** by h2zero, v2.x
+
+## ESP32-S3-Touch-LCD-4 Library file installation instructions
+
+Waveshare's own instructions for this board and their example sketches. **This firmware
+needs the libraries listed under [Libraries](#libraries) instead**: it uses GFX Library for
+Arduino, SensorLib and WS_CH32_IO, because the V4 board has the CH32V003 chip rather than
+the TCA9554 expander. The table is here because `lvgl` and `lv_conf.h` are shared, and the
+offline copies below are the versions this board is tested with.
+
+| Library Name | Description | Version | Library Installation Requirements |
+|---|---|---|---|
+| ESP32_Display_Panel | ST7701, GT911 driver library | v0.1.8 | "Install Online" or "Install Offline" |
+| ESP32_IO_Expander | TCA9554 IO expansion chip driver library | v0.0.4 | "Install Offline" (return value of IOExpander_Library changed) |
+| lvgl | LVGL graphical library | v8.4.0 | "Install Online" requires copying the demos folder to src after installation. "Install Offline" is recommended |
+| lv_conf.h | LVGL configuration file | —— | "Install Offline" |
+
+The libraries to install offline are in Waveshare's repository:
+<https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4/tree/main/examples/arduino/libraries>
 
 ## Arduino IDE settings
 

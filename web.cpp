@@ -429,8 +429,11 @@ static void handle_root() {
 
   char pass[33];
   get_password(pass);
-  add(s, "<p class='sub'>Updated every 5 s &middot; up %lu min &middot; <a href='/log'>log</a> &middot; <a href='/files'>files</a>%s</p></body></html>", (unsigned long)(now / 60000),
-      pass[0] ? " &middot; <a href='/logout'>Log out</a>" : "");
+  add(s, "<p class='sub'>Updated every 5 s &middot; up %lu min &middot; <a href='/log'>log</a> &middot; <a href='/files'>files</a>%s</p>"
+         "<p class='sub'>&copy; %s %s Fredrik Rudin &middot; "
+         "<a href='https://github.com/fredrikrudin/esp32-S3-ws4-caravan'>github.com/fredrikrudin/esp32-S3-ws4-caravan</a><br>"
+         "med hj&auml;lp av claude.ai Opus 5</p></body></html>",
+      (unsigned long)(now / 60000), pass[0] ? " &middot; <a href='/logout'>Log out</a>" : "", __DATE__, __TIME__);
   server.send(200, "text/html; charset=utf-8", s);
 }
 
