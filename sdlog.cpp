@@ -37,22 +37,45 @@ static void ring_write(const char *s, size_t n) {
   ring_len = ring_wrapped ? LOG_RING : ring_pos;
 }
 
-/* Waveshare's own SD demo does exactly this: set the three pins, mount in
-   1-bit mode. The CH32 chip is not involved, so nothing else is touched. */
+/* Waveshare's own SD demo sets the three pins and mounts in 1-bit mode, but it
+   also waits 3 s after starting the CH32 chip, which powers parts of the board.
+   Mounting too early is the most likely reason a card is not found, so the same
+   wait is honoured here, and slower bus speeds are tried before giving up. */
 bool sd_log_mount() {
   if (sd_mounted) return true;
 
-  SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
-  bool ok = SD_MMC.begin("/sdcard", true);  // true = 1-bit mode
-  if (!ok) {  // one retry: the card sometimes needs a moment after being inserted
-    SD_MMC.end();
-    delay(100);
-    ok = SD_MMC.begin("/sdcard", true);
+  if (millis() < 3200) {  // as in Waveshare's example: let the board settle
+    logf("SD: waiting for the board to settle before mounting");
+    delay(3200 - millis());
   }
-  if (!ok || SD_MMC.cardType() == CARD_NONE) {
+
+  struct {
+    int freq;
+    const char *what;
+  } attempts[] = {
+    { 0, "default speed" },
+    { SDMMC_FREQ_DEFAULT, "20 MHz" },
+    { SDMMC_FREQ_HIGHSPEED, "40 MHz" },
+    { SDMMC_FREQ_PROBING, "400 kHz" },
+  };
+
+  bool ok = false;
+  for (auto &a : attempts) {
+    SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
+    ok = a.freq ? SD_MMC.begin("/sdcard", true, false, a.freq)
+                : SD_MMC.begin("/sdcard", true);
+    if (ok && SD_MMC.cardType() != CARD_NONE) {
+      logf("SD: mounted at %s", a.what);
+      break;
+    }
     SD_MMC.end();
+    ok = false;
+    delay(100);
+  }
+
+  if (!ok) {
     strlcpy(sd_msg, "No card found", sizeof(sd_msg));
-    logf("SD: no card found");
+    logf("SD: no card found (tried four bus speeds on GPIO %d/%d/%d)", SD_CLK, SD_CMD, SD_D0);
     return false;
   }
 
