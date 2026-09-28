@@ -1,18 +1,30 @@
 # esp32-S3-ws4-caravan
 
+See **[BOARD_NOTES.md](BOARD_NOTES.md)** for hard-won notes about this board: SD card wiring, memory limits, LVGL 8 pitfalls and the BLE protocols used here.
+
+
 Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 touch board with the CH32V003 IO expander. Built with Arduino and LVGL 8.
 
-![Power tab](power-tab.png)
+## Screens
 
-*The Power tab with example values. Dots move along the lines where energy flows.*
+| | |
+|---|---|
+| ![Home](screen-home.png) | ![Power](screen-power.png) |
+| **Home** – clock between battery and solar gauges, with temperatures and relays below | **Power** – the battery in the middle, chargers left, AC side right, DC loads below |
+| ![Relays](screen-relays.png) | ![History](screen-history.png) |
+| **Relays** – one Off/On control per relay, in the Victron switch-pane style | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
+| ![Settings](screen-settings.png) | |
+| **Settings** – grouped into sections, each feature with its own on/off switch | |
+
+*Screens drawn to scale with example values.*
 
 ## Features
 
 | Tab | What it shows |
 |---|---|
 | **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
-| **Power** | Tap any tile for bar charts of the last 24 hours and 7 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style with animated energy flows |
-| **Battery** | *Experimental:* the battery's own BMS over Bluetooth (JBD protocol, used by many ECO-WORTHY batteries): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
+| **Power** | Tap any tile for bar charts of the last 24 hours and 7 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style, with each connection lighting up in its device colour while energy flows |
+| **Battery** | The battery's own BMS over Bluetooth (ECO-WORTHY/BWOB and JBD protocols): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
 | **Shelly** | Up to 4 Shelly plugs/switches over Bluetooth (BLE RPC): on/off and power. Off by default; pair them under Settings |
 | **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Each relay is an Off | On segmented control in the Victron switch-pane style, so a stray touch can't toggle anything |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
@@ -94,7 +106,7 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `ui_victron_settings.cpp` | Victron device settings |
 | `ui_saver.cpp` | Screen saver |
 | `font_clock_96.c` | 96 px clock font for the screen saver (digits, `:` and `-`) |
-| `power-tab.png` | Power tab picture for this README |
+| `screen-*.png` | Screenshots for this README |
 | `memory.md` | Notes and plan for lowering memory use and latency |
 
 ## Libraries
@@ -142,15 +154,18 @@ Optional, in `lv_conf.h`:
 Diagnostics (Bluetooth frames, connections, errors) go to the Serial Monitor and to a
 24 kB buffer in PSRAM that you can read in a browser at `/log` without attaching a computer.
 Switch on **Settings → SD card** to also append everything to `/caravan.log` on the TF card
-(SDMMC 1-bit mode: GPIO2 clock, GPIO1 command, GPIO4 data). The file is flushed every 5 seconds. The same section has Mount, Eject, New log and Delete old logs, plus card type and free space. Log files can be listed and downloaded in the browser at `/files`.
+(SPI: GPIO2 clock, GPIO1 MOSI, GPIO4 MISO). The file is flushed every 5 seconds. The same section has Mount, Eject, New log and Delete old logs, plus card type and free space. Log files can be listed and downloaded in the browser at `/files`.
 
 **Measurements as CSV:** switch on "Log measurements" to append a line to `/data.csv` every 1, 5, 15 or 60 minutes: time, SOC, battery voltage/current/power, solar power and yield, the three RuuviTag temperatures, outside temperature, relays on and Shelly power. Download it from `/files` and open it in a spreadsheet.
+
+**Restart, shut down, full reset:** the System section at the end of Settings. Each asks for confirmation. Shutting down puts the board into deep sleep with the backlight off; the reset button wakes it. A full reset erases every setting, so back up to the card first.
 
 **Settings backup:** "Back up settings" writes everything to `/settings.json` on the card, including WiFi and Victron encryption keys, so keep the card safe. "Restore" reads it back and restarts the board, which is the quick way back after an accidental flash erase.
 
 ## Hardware notes
 
 - **Backlight** PWM comes from the CH32V003 and is inverted on this board (0 = full brightness, 255 = off). This is handled in `set_backlight()`.
+- **TF card**: on the V4 board the slot works over **SPI** (SCK GPIO2, MOSI GPIO1, MISO GPIO4), with chip select handled on the board. Waveshare's own `10_LVGL_SD` example uses SD_MMC and does not work on this revision (error `0x107`, `send_op_cond` timeout). Settings → SD card → **Probe card** tries both modes and every expander bit if a card is ever not found.
 - **External I2C** shares GPIO15/7 with touch and the CH32V003. The PCF8574 only supports 100 kHz, so the bus slows down briefly while talking to it.
 - ⚠️ Many PCF8574 relay boards pull I2C up to 5 V. The ESP32 is **not** 5 V tolerant: power the PCF8574 from 3.3 V, or make sure its pull-ups go to 3.3 V.
 - **Victron**: enable *Instant readout via Bluetooth* in VictronConnect and copy the encryption key from *Product info*.

@@ -48,9 +48,10 @@ static void set_status(const char *fmt, ...) {
   vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
+  bool changed = strcmp(bms.status, buf) != 0;
   strlcpy(bms.status, buf, sizeof(bms.status));
   xSemaphoreGive(bms_mtx);
-  logf("BMS: %s", buf);
+  if (changed) logf("BMS: %s", buf);  // don't repeat the same line every cycle
 }
 
 static void hex_line(const uint8_t *d, size_t n, char *out, size_t out_len) {

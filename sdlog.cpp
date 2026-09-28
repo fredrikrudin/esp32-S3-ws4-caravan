@@ -5,10 +5,19 @@
    configuration SPI, which is only used while the panel starts up. */
 #include "app.h"
 #include <SD_MMC.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
+#include "WS_CH32_IO.h"
+#include <esp_log.h>
 
 #define SD_CLK 2  // also LCD_SCL: the panel only uses it while starting up
 #define SD_CMD 1  // also LCD_SDA
 #define SD_D0 4
+/* SPI mode: SCK=2, MOSI=1, MISO=4. Waveshare's own description for this board
+   says the card's chip select is pulled low by the I2C expander, so the SD
+   library is handed a pin it can toggle harmlessly (GPIO44, RS485 TX, unused). */
+#define SD_SPI_CS 44
 #define LOG_RING 12288  // bytes kept for the web view (smaller = less PSRAM traffic)
 #define SD_FLUSH_MS 5000  // how often the file is flushed
 
@@ -19,6 +28,7 @@ static size_t ring_pos = 0;
 static bool ring_wrapped = false;
 
 static bool sd_mounted = false;
+static bool sd_spi = false;  // true = mounted over SPI, false = SD (SDMMC) mode
 static char sd_msg[64] = "Not started";
 static File log_file;
 static char log_name[32] = "/caravan.log";
@@ -41,6 +51,141 @@ static void ring_write(const char *s, size_t n) {
    also waits 3 s after starting the CH32 chip, which powers parts of the board.
    Mounting too early is the most likely reason a card is not found, so the same
    wait is honoured here, and slower bus speeds are tried before giving up. */
+/* One mount attempt at a given speed; 0 = library default.
+   GPIO2 and GPIO1 are also the display's setup bus (SCK and MOSI). Once the
+   panel has started they stay configured as plain outputs, which stops the
+   card's answers on the command line from getting through - so the pins are
+   released and given pull-ups first, as an SD bus needs. */
+static void release_pins() {
+  gpio_reset_pin((gpio_num_t)SD_CLK);
+  gpio_reset_pin((gpio_num_t)SD_CMD);
+  gpio_reset_pin((gpio_num_t)SD_D0);
+  delay(5);
+}
+
+/* SPI attempt that leaves the expander alone */
+static bool try_mount_spi_raw(uint32_t freq) {
+  release_pins();
+  SPI.end();
+  SPI.begin(SD_CLK, SD_D0, SD_CMD, -1);  // SCK, MISO, MOSI
+  if (SD.begin(SD_SPI_CS, SPI, freq) && SD.cardType() != CARD_NONE) {
+    sd_spi = true;
+    return true;
+  }
+  SD.end();
+  sd_spi = false;
+  return false;
+}
+
+/* SPI mode, with the expander bit that holds chip select pulled LOW */
+static bool try_mount_spi(uint8_t cs_bits, uint32_t freq) {
+  uint8_t out = WS_CH32_IO::OUT_DISPLAY_ON & ~cs_bits;  // chip select low, display bits kept
+  WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_OUTPUT, out);
+  release_pins();
+  SPI.end();
+  SPI.begin(SD_CLK, SD_D0, SD_CMD, -1);  // SCK, MISO, MOSI
+  if (SD.begin(SD_SPI_CS, SPI, freq) && SD.cardType() != CARD_NONE) {
+    sd_spi = true;
+    return true;
+  }
+  SD.end();
+  return false;
+}
+
+static bool try_mount(int freq) {
+  sd_spi = false;
+  gpio_reset_pin((gpio_num_t)SD_CLK);
+  gpio_reset_pin((gpio_num_t)SD_CMD);
+  gpio_reset_pin((gpio_num_t)SD_D0);
+  pinMode(SD_CMD, INPUT_PULLUP);
+  pinMode(SD_D0, INPUT_PULLUP);
+  delay(5);
+
+  SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
+  bool ok = freq ? SD_MMC.begin("/sdcard", true, false, freq) : SD_MMC.begin("/sdcard", true);
+  if (ok && SD_MMC.cardType() != CARD_NONE) return true;
+  SD_MMC.end();
+  return false;
+}
+
+/* The card's D3 line doubles as chip select: if it is low at power-up the card
+   starts in SPI mode and ignores SD-mode commands (error 0x107, send_op_cond
+   timeout). On this board that line goes to the CH32 chip, and which bit it is
+   differs between revisions - so read the registers and try the possibilities. */
+bool sd_log_probe() {
+  uint8_t dir = 0, out = 0;
+  bool have_dir = WS_CH32_IO::readRegister(Wire, WS_CH32_IO::REG_DIRECTION, &dir);
+  bool have_out = WS_CH32_IO::readRegister(Wire, WS_CH32_IO::REG_OUTPUT, &out);
+  logf("SD probe: CH32 direction=0x%02X (%s), output=0x%02X (%s)",
+       dir, have_dir ? "read" : "read failed", out, have_out ? "read" : "read failed");
+
+  /* direction=0x00 means every expander pin is an input, so writing the output
+     register alone changes nothing - the direction has to be set as well. Which
+     value means "output" is not documented, so both are tried. */
+  const uint8_t bits[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
+  const uint8_t dirs[] = { 0xFF, 0x00 };
+  bool found = false;
+
+  esp_log_level_set("sdmmc_common", ESP_LOG_NONE);
+  esp_log_level_set("sdmmc_sd", ESP_LOG_NONE);
+  esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_NONE);
+  logf("SD probe: starting (SPI first; direction register included this time)");
+
+  /* nothing touched at all, in case the board handles it itself */
+  if (try_mount_spi_raw(400000)) {
+    logf("SD probe: >>> SPI works with the expander untouched <<<");
+    found = true;
+  }
+
+  for (uint8_t dir : dirs) {
+    if (found) break;
+    WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_DIRECTION, dir);
+    delay(20);
+    for (uint8_t b : bits) {
+      /* SPI mode wants chip select low */
+      WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_OUTPUT, WS_CH32_IO::OUT_DISPLAY_ON & ~b);
+      delay(30);
+      if (try_mount_spi_raw(400000)) {
+        logf("SD probe: >>> SPI works: direction 0x%02X, bit 0x%02X low <<<", dir, b);
+        found = true;
+        break;
+      }
+      /* SD mode wants it high */
+      WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_OUTPUT, WS_CH32_IO::OUT_DISPLAY_ON | b);
+      delay(30);
+      if (try_mount(SDMMC_FREQ_PROBING)) {
+        logf("SD probe: >>> SD mode works: direction 0x%02X, bit 0x%02X high <<<", dir, b);
+        found = true;
+        break;
+      }
+      logf("SD probe: direction 0x%02X, bit 0x%02X -> no card either way", dir, b);
+    }
+  }
+
+  logf("SD probe: finished - %s", found ? "card found" : "no card in any combination");
+  esp_log_level_set("sdmmc_common", ESP_LOG_ERROR);
+  esp_log_level_set("sdmmc_sd", ESP_LOG_ERROR);
+  esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_ERROR);
+
+  if (!found) {  // put the expander back as it was
+    if (have_dir) WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_DIRECTION, dir);
+    WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_OUTPUT, have_out && out ? out : WS_CH32_IO::OUT_DISPLAY_ON);
+  }
+  if (found) {
+    uint64_t mb = (sd_spi ? SD.cardSize() : SD_MMC.cardSize()) / (1024 * 1024);
+    log_file = sd_fs().open(log_name, FILE_APPEND);
+    sd_mounted = (bool)log_file;
+    snprintf(sd_msg, sizeof(sd_msg), sd_mounted ? "Logging to %s (card %llu MB)" : "Card found but cannot write",
+             log_name, (unsigned long long)mb);
+  } else {
+    strlcpy(sd_msg, "No card found (see the log)", sizeof(sd_msg));
+  }
+  return found;
+}
+
+/* The V4 board wires the card for SPI (SCK 2, MOSI 1, MISO 4) with chip select
+   handled on the board, which is what the probe found. SD (SDMMC) mode, as in
+   Waveshare's own example, does not work here, so it is only a fallback. */
 bool sd_log_mount() {
   if (sd_mounted) return true;
 
@@ -49,59 +194,61 @@ bool sd_log_mount() {
     delay(3200 - millis());
   }
 
-  struct {
-    int freq;
-    const char *what;
-  } attempts[] = {
-    { 0, "default speed" },
-    { SDMMC_FREQ_DEFAULT, "20 MHz" },
-    { SDMMC_FREQ_HIGHSPEED, "40 MHz" },
-    { SDMMC_FREQ_PROBING, "400 kHz" },
-  };
-
+  const uint32_t speeds[] = { 20000000, 4000000, 400000 };
   bool ok = false;
-  for (auto &a : attempts) {
-    SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
-    ok = a.freq ? SD_MMC.begin("/sdcard", true, false, a.freq)
-                : SD_MMC.begin("/sdcard", true);
-    if (ok && SD_MMC.cardType() != CARD_NONE) {
-      logf("SD: mounted at %s", a.what);
+  for (uint32_t f : speeds) {
+    if (try_mount_spi_raw(f)) {
+      logf("SD: mounted over SPI at %lu kHz", (unsigned long)(f / 1000));
+      ok = true;
       break;
     }
-    SD_MMC.end();
-    ok = false;
-    delay(100);
+  }
+  if (!ok) {  // just in case a future board revision uses SD mode
+    for (int f : { 0, SDMMC_FREQ_PROBING }) {
+      if (try_mount(f)) {
+        logf("SD: mounted in SD mode");
+        ok = true;
+        break;
+      }
+    }
   }
 
   if (!ok) {
     strlcpy(sd_msg, "No card found", sizeof(sd_msg));
-    logf("SD: no card found (tried four bus speeds on GPIO %d/%d/%d)", SD_CLK, SD_CMD, SD_D0);
+    logf("SD: no card found - use Probe card in Settings");
     return false;
   }
 
-  uint64_t mb = SD_MMC.cardSize() / (1024 * 1024);
-  log_file = SD_MMC.open(log_name, FILE_APPEND);
+  uint64_t mb = (sd_spi ? SD.cardSize() : SD_MMC.cardSize()) / (1024 * 1024);
+  log_file = sd_fs().open(log_name, FILE_APPEND);
   if (!log_file) {
-    SD_MMC.end();
+    if (sd_spi) SD.end();
+    else SD_MMC.end();
     strlcpy(sd_msg, "Card found, but cannot write", sizeof(sd_msg));
     logf("SD: card found (%llu MB) but the file could not be opened - FAT32?", (unsigned long long)mb);
     return false;
   }
   sd_mounted = true;
-  snprintf(sd_msg, sizeof(sd_msg), "Logging to %s (card %llu MB)", log_name, (unsigned long long)mb);
-  logf("SD: mounted, card %llu MB", (unsigned long long)mb);
-  log_file.printf("\n--- board started, %lu ms ---\n", (unsigned long)millis());
+  snprintf(sd_msg, sizeof(sd_msg), "Logging to %s (card %llu MB, %s)", log_name, (unsigned long long)mb,
+           sd_spi ? "SPI" : "SD mode");
+  logf("SD: mounted, card %llu MB (%s)", (unsigned long long)mb, sd_spi ? "SPI" : "SD mode");
+  static bool header_written = false;  // once per boot, not once per mount
+  if (!header_written) {
+    log_file.printf("\n--- board started, %lu ms ---\n", (unsigned long)millis());
+    header_written = true;
+  }
   return true;
 }
 
 fs::FS &sd_fs() {
-  return SD_MMC;
+  return sd_spi ? (fs::FS &)SD : (fs::FS &)SD_MMC;
 }
 
 void sd_log_unmount() {
   if (!sd_mounted) return;
   log_file.close();
-  SD_MMC.end();
+  if (sd_spi) SD.end();
+  else SD_MMC.end();
   sd_mounted = false;
   strlcpy(sd_msg, "Card not in use", sizeof(sd_msg));
 }
@@ -182,14 +329,14 @@ void sd_card_info(char *out, size_t n) {
     return;
   }
   const char *type = "unknown";
-  switch (SD_MMC.cardType()) {
+  switch (sd_spi ? SD.cardType() : SD_MMC.cardType()) {
     case CARD_MMC: type = "MMC"; break;
     case CARD_SD: type = "SDSC"; break;
     case CARD_SDHC: type = "SDHC"; break;
     default: break;
   }
-  uint64_t total = SD_MMC.totalBytes() / (1024 * 1024);
-  uint64_t used = SD_MMC.usedBytes() / (1024 * 1024);
+  uint64_t total = (sd_spi ? SD.totalBytes() : SD_MMC.totalBytes()) / (1024 * 1024);
+  uint64_t used = (sd_spi ? SD.usedBytes() : SD_MMC.usedBytes()) / (1024 * 1024);
   snprintf(out, n, "%s card, %llu MB used of %llu MB", type, (unsigned long long)used, (unsigned long long)total);
 }
 

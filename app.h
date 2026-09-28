@@ -333,6 +333,7 @@ void log_begin();
 void logf(const char *fmt, ...);
 void log_dump(String &out);
 bool sd_log_mount();
+bool sd_log_probe();  // works out which CH32 bit releases the card
 void sd_log_unmount();
 bool sd_log_ok();
 const char *sd_log_status();

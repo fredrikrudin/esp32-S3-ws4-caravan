@@ -359,6 +359,65 @@ void bms_settings_refresh(const BmsSeen *seen, int n, uint32_t now) {
   }
 }
 
+/* ---------- confirmation dialog ---------- */
+static void (*confirm_action)() = nullptr;
+
+static void confirm_cb(lv_event_t *e) {
+  lv_obj_t *mb = lv_event_get_current_target(e);
+  uint16_t id = lv_msgbox_get_active_btn(mb);
+  lv_msgbox_close(mb);
+  if (id == 1 && confirm_action) confirm_action();  // 1 = "Yes"
+}
+
+static void confirm(const char *title, const char *text, void (*action)()) {
+  static const char *btns[] = { "Cancel", "Yes", "" };
+  confirm_action = action;
+  lv_obj_t *mb = lv_msgbox_create(NULL, title, text, btns, false);  // NULL = modal
+  lv_obj_add_event_cb(mb, confirm_cb, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_center(mb);
+}
+
+/* ---------- system ---------- */
+static void tidy_up() {
+  logf("System: closing the log and unmounting the card");
+  sd_log_unmount();
+  lv_refr_now(NULL);
+  delay(300);
+}
+
+static void do_reboot() {
+  tidy_up();
+  ESP.restart();
+}
+
+static void do_shutdown() {
+  tidy_up();
+  set_backlight(0);
+  delay(200);
+  esp_deep_sleep_start();  // press the reset button to start again
+}
+
+static void do_factory_reset() {
+  logf("System: erasing all settings");
+  prefs.clear();  // everything in the "wx" namespace
+  tidy_up();
+  ESP.restart();
+}
+
+static void reboot_cb(lv_event_t *e) {
+  confirm("Restart", "Restart the board now?", do_reboot);
+}
+
+static void shutdown_cb(lv_event_t *e) {
+  confirm("Shut down", "Switch the display off?\n\nThe board goes to sleep and only the reset button (or cutting the power) starts it again.", do_shutdown);
+}
+
+static void factory_cb(lv_event_t *e) {
+  confirm("Full reset",
+          "Erase every setting?\n\nWiFi, weather location, RuuviTags, Victron devices and keys, relays, Shelly and the web password are all lost. The board restarts afterwards.",
+          do_factory_reset);
+}
+
 /* ---------- SD card and logging ---------- */
 static void update_sdlog_label() {
   char info[64];
@@ -608,6 +667,10 @@ void build_settings_tab() {
   make_btn(row, LV_SYMBOL_REFRESH, sd_refresh_cb);
 
   row = make_row(sec, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_SETTINGS " Probe card", [](lv_event_t *e) {
+    sd_log_probe();
+    update_sdlog_label();
+  });
   make_btn(row, LV_SYMBOL_FILE " New log", sd_newfile_cb);
   lv_obj_t *del_logs = make_btn(row, LV_SYMBOL_TRASH " Delete old logs", sd_delete_cb);
   lv_obj_set_style_bg_color(del_logs, lv_palette_main(LV_PALETTE_RED), 0);
@@ -649,4 +712,17 @@ void build_settings_tab() {
                     "(c) " __DATE__ " " __TIME__ " Fredrik Rudin\n"
                     "github.com/fredrikrudin/esp32-S3-ws4-caravan\n"
                     "med hjalp av claude.ai Opus 5");
+
+  /* ---- System ---- */
+  sec = make_section(tab_settings, LV_SYMBOL_POWER "  System");
+  row = make_row(sec, LV_FLEX_ALIGN_START);
+  make_btn(row, LV_SYMBOL_REFRESH " Restart", reboot_cb);
+  make_btn(row, LV_SYMBOL_POWER " Shut down", shutdown_cb);
+  lv_obj_t *reset_btn = make_btn(row, LV_SYMBOL_TRASH " Full reset", factory_cb);
+  lv_obj_set_style_bg_color(reset_btn, lv_palette_main(LV_PALETTE_RED), 0);
+
+  lv_obj_t *sys_hint = make_grey_label(sec);
+  lv_obj_set_width(sys_hint, LV_PCT(100));
+  lv_label_set_long_mode(sys_hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(sys_hint, "Each asks for confirmation first. Back up your settings to the card before a full reset.");
 }
