@@ -15,8 +15,8 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
 | ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
 | **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
-| ![Settings](screen-settings.png) | |
-| **Settings** – its own row of tabs (Connect, Sensors, Control, Device), each a few cards | |
+| ![Settings: Connect](screen-settings.png) | ![Settings: Device](screen-settings-device.png) |
+| **Settings → Connect** – WiFi, the web page and the weather location | **Settings → Device** – display, power saving, alarms, SD card |
 
 *Screens drawn to scale with example values.*
 
@@ -37,7 +37,22 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 
 A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It also draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
 
-The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
+## Settings
+
+Settings has its own row of tabs, so no page is more than a couple of screens long.
+Each page is a column of cards.
+
+| Page | Cards |
+|---|---|
+| **Connect** | **WiFi** (scan, password, status) &middot; **Web page** (name, password, remote admin) &middot; **Weather location** (city lookup) |
+| **Sensors** | **Temperature** (up to 3 named RuuviTags) &middot; **Battery (BMS)** &middot; **Victron devices** (add, name, encryption key, live status) &middot; **Sensor scan interval** (1–10 s) |
+| **Control** | **Shelly** (WiFi or Bluetooth, up to 4) &middot; **Relays** (PCF8574 address, active low, count, names) &middot; **I2C devices** (bus scan) |
+| **Device** | **Display** (brightness, screen saver brightness) &middot; **Power** (CPU slowdown, performance log, onboard LiPo) &middot; **Alarms** (thresholds, wake the screen) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **About** &middot; **System** (restart, shut down, full reset) |
+
+Temperature, Battery, Relays and Shelly each have an on/off switch: switching one off also stops
+its background work and takes its tab off the tab bar.
+
+![Settings: Sensors](screen-settings-sensors.png)
 
 Under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
