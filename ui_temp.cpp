@@ -66,6 +66,10 @@ void ruuvi_timer_cb(lv_timer_t *t) {
   uint32_t now = millis();
   char b[96];
   int shown = 0;
+  if (!tab_visible(tab_temp)) {  // the Settings list still wants the tag list
+    ruuvi_settings_refresh(copy, now);
+    return;
+  }
 
   if (!feat_ruuvi) {
     for (int i = 0; i < MAX_RUUVI; i++) lv_obj_add_flag(cards[i].card, LV_OBJ_FLAG_HIDDEN);

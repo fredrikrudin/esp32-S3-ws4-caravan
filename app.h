@@ -56,8 +56,24 @@ LV_FONT_DECLARE(font_clock_96)
 #define NO_NET_FOUND "No networks found"
 #define KB_H 220  // on-screen keyboard height
 
+/* Firmware version. Bump the minor number when something user-visible changes,
+   the major when the settings format does. Shown in Settings -> About, on the
+   web page and in the first log line. */
+#define FW_VERSION "1.4"
+
 #define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
-#define ENABLE_BMS 1            // default for the Battery feature switch (Settings)
+/* Battery (BMS) support. Set to 1 to bring the tab and the ECO-WORTHY/JBD
+   decoding back; with 0 the code is still built but never runs, the tab is
+   hidden and the switch in Settings has no effect. */
+#define ENABLE_BMS 0
+
+/* 1 = log every BLE frame and other chatty diagnostics. Off in normal use:
+   the prints cost time inside the Bluetooth task. */
+#define DEBUG_LOG 0
+#define dlogf(...) \
+  do { \
+    if (DEBUG_LOG) logf(__VA_ARGS__); \
+  } while (0)
 #define SAVER_TIMEOUT_MS 30000  // screen saver after this long without touch
 #define SAVER_COLOR 0x505050    // screen saver clock color (dim grey)
 
@@ -67,6 +83,8 @@ LV_FONT_DECLARE(font_clock_96)
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
+#define MAX_ALARMS 8          // messages kept at once
+#define HIST_RECENT 60        // recent samples (10 s apart) for the sparklines
 #define HIST_HOURS 24         // hourly energy buckets kept
 #define HIST_DAYS 7           // daily energy buckets kept
 #define MAX_BMS_SEEN 10       // named BLE devices listed on the Battery and Shelly pages
@@ -170,12 +188,17 @@ struct VicData {
   uint16_t alarm;           // inverter alarm bits
 };
 
-/* Shelly device over BLE RPC, saved to flash as one block */
+/* A Shelly device, over Bluetooth or over WiFi. Saved to flash as one block. */
+enum { SHELLY_BLE = 0,
+       SHELLY_WIFI = 1 };
+
 struct ShellyCfg {
   bool used;
   uint8_t addr_type;
-  char mac[18];
+  uint8_t transport;  // SHELLY_BLE or SHELLY_WIFI
+  char mac[18];       // Bluetooth address
   char name[24];
+  char host[32];  // WiFi: IP address or host name
 };
 
 /* Live values of one Shelly device */
@@ -183,7 +206,36 @@ struct ShellyData {
   bool connected, valid, on;
   float power, voltage, current;  // NAN if the device doesn't measure
   uint32_t updated;
+  uint8_t fails;  // consecutive failures; the poll interval backs off
   char status[64];
+};
+
+/* Warnings and alarms */
+enum { ALARM_LEVEL_NONE = 0,
+       ALARM_LEVEL_WARN = 1,
+       ALARM_LEVEL_ALARM = 2 };
+
+struct Alarm {
+  uint8_t level;
+  char text[48];
+};
+
+/* Thresholds, saved to flash as one block */
+struct AlarmCfg {
+  bool enabled;
+  uint8_t soc_warn;   // % - warning below this
+  uint8_t soc_alarm;  // % - alarm below this
+  int8_t temp_low;    // degC - frost alarm at or below this
+  uint8_t wind_warn;  // m/s - 0 = off
+  bool wake_saver;    // a new alarm wakes the screen saver
+};
+
+/* One recent sample, taken every 10 s, for the small graphs in the tiles */
+struct HistSample {
+  float pv_w;    // solar power
+  float load_w;  // estimated consumption
+  float soc;     // state of charge
+  float batt_w;  // battery power, + charging
 };
 
 /* One period of energy history (an hour or a day) */
@@ -242,6 +294,7 @@ extern HWCDC USBSerial;  // defined in board.cpp
 
 extern Shared g;
 extern SemaphoreHandle_t g_mtx, ruuvi_mtx, vic_mtx;
+extern SemaphoreHandle_t ble_conn_mtx;  // only one task may connect over BLE at a time
 extern Preferences prefs;
 
 extern RuuviTag tags[MAX_TAGS];
@@ -250,6 +303,7 @@ extern VicCfg vic_cfg[MAX_VIC];
 extern VicData vic_data[MAX_VIC];
 extern VicSeen vic_seen[MAX_VIC_SEEN];
 
+extern AlarmCfg alarm_cfg;
 extern BmsCfg bms_cfg;
 extern ShellyCfg shelly_cfg[MAX_SHELLY];
 extern RelayCfg relay_cfg;
@@ -258,7 +312,7 @@ extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly;
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly, cmd_save_alarm;
 extern volatile bool scan_restart;
 
 /* Features that can be switched off in Settings (services stop too) */
@@ -268,6 +322,8 @@ extern volatile bool feat_bms;     // Battery tab: BMS connection
 extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth (default off)
 extern volatile bool feat_remote;  // web page may switch relays and Shelly (default off)
 extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
+extern volatile bool feat_powersave;  // slow the CPU while the screen sleeps
+extern volatile bool feat_perflog;    // one performance line every 30 s
 extern volatile bool feat_csv;     // write measurements to /data.csv (default off)
 extern volatile uint8_t csv_interval_min;  // minutes between CSV lines
 
@@ -292,6 +348,8 @@ String url_encode(const char *s);
 /* board.cpp */
 void board_init();  // IO expander, touch, display, LVGL
 void set_backlight(uint8_t pct);
+/* Onboard LiPo, measured by the CH32 chip. false = no battery connected. */
+bool board_battery(float *volts, int *percent, bool *charging);
 
 /* net.cpp */
 void net_start();                     // starts the network task (WiFi, NTP, weather, flash writes)
@@ -330,6 +388,7 @@ const char *bms_protection_text(uint16_t bits);  // NULL = no protection active
 
 /* sdlog.cpp (log to Serial, to a ring buffer readable at /log, and to the TF card) */
 void log_begin();
+void log_boot_banner();  // version, build date and the environment check
 void logf(const char *fmt, ...);
 void log_dump(String &out);
 bool sd_log_mount();
@@ -345,11 +404,24 @@ int sd_log_delete_old();
 void sd_list_files(String &out);
 fs::FS &sd_fs();  // the mounted card (SD mode or SPI mode)
 
+/* power.cpp */
+void power_set_saving(bool screen_asleep);
+bool power_saving_active();
+void perf_service();  // call from loop()
+
+/* alarms.cpp */
+void alarms_begin();
+void alarms_check();  // once a second from the UI
+int alarms_get(Alarm *out, int max);
+bool alarms_top(char *text, size_t len, uint8_t *level);
+bool alarms_take_new();  // true once after a new alarm appears
+
 /* history.cpp (energy history behind the Power tab's History screen) */
 void history_begin();
 void history_service();  // call from loop()
 void history_get(HistBucket **hour_arr, HistBucket **day_arr);
 void history_totals(bool daily, float *solar_kwh, float *load_kwh);
+const HistSample *history_recent();  // HIST_RECENT entries, oldest first
 
 /* ui_history.cpp */
 void build_history_screen();
@@ -366,7 +438,9 @@ bool settings_restore();
 void shelly_start();
 void shelly_get(int idx, ShellyData *out);
 void shelly_set(int idx, bool on);  // switch a device on or off
-void shelly_add(const char *mac, uint8_t addr_type, const char *name);
+void shelly_add(const char *mac, uint8_t addr_type, const char *name);        // Bluetooth
+void shelly_add_wifi(const char *host, const char *name);                     // WiFi
+void shelly_retry(int idx);  // poll this device again at once
 void shelly_remove(int idx);
 
 /* relays.cpp */
@@ -393,7 +467,10 @@ lv_obj_t *make_section(lv_obj_t *parent, const char *title);  // card with a hea
 lv_obj_t *make_switch_row(lv_obj_t *parent, const char *text, bool on, lv_event_cb_t cb);
 lv_obj_t *make_grey_label(lv_obj_t *parent);
 lv_obj_t *make_slider(lv_obj_t *parent, int min, int max, int val, lv_event_cb_t cb);
+bool tab_visible(lv_obj_t *tab);  // false when hidden: timers can skip their work
 void set_label(lv_obj_t *l, const char *txt);  // only redraws when the text changes
+lv_obj_t *make_sparkline(lv_obj_t *parent, uint32_t color, int w, int h, int points);
+void set_sparkline(lv_obj_t *chart, const float *values, int n, float floor_max);
 lv_obj_t *make_segment(lv_obj_t *parent, lv_event_cb_t cb, void *user_data);  // Off | On control
 void set_segment(lv_obj_t *seg, bool on);
 

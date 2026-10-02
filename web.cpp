@@ -112,6 +112,12 @@ static const char PAGE_HEAD[] PROGMEM =
   ".strip{display:flex;justify-content:space-evenly;background:#1b1f24;border-radius:12px;padding:10px;margin:10px 0}"
   ".fc{display:flex;gap:8px}.fc>div{flex:1;background:#23272e;border-radius:10px;padding:8px;text-align:center;font-size:13px}"
   ".big{font-size:26px}"
+  ".alarm{padding:10px 12px;border-radius:8px;margin:8px 0;font-weight:bold}"
+  ".lvl2{background:#c0392b}.lvl1{background:#b9770e}"
+  ".chart{width:100%;height:150px;background:#1b1f24;border-radius:10px;margin:6px 0}"
+  ".sparks{display:flex;gap:10px;flex-wrap:wrap}"
+  ".spark{flex:1;min-width:200px;background:#1b1f24;border-radius:10px;padding:6px}"
+  ".spark svg{width:100%;height:60px}"
   "form.sw{margin:0}.seg{display:flex;border-radius:8px;overflow:hidden}"
   ".seg button,.seg span{font-size:14px;padding:8px 16px;border:1px solid #2f6fb5;background:#0e2233;color:#e0e0e0;width:auto}"
   ".seg button:first-child,.seg span:first-child{border-radius:8px 0 0 8px}"
@@ -245,6 +251,76 @@ static int battery_monitor(uint32_t now) {
 
 
 
+/* ---------- charts, drawn as inline SVG (no JavaScript needed) ---------- */
+
+/* Bars of solar and consumption per hour, with the battery as a line on top */
+static void svg_history(String &s) {
+  HistBucket *hours, *days;
+  history_get(&hours, &days);
+  if (!hours) return;
+
+  float max = 1;
+  for (int i = 0; i < HIST_HOURS; i++) {
+    if (hours[i].solar_wh > max) max = hours[i].solar_wh;
+    if (hours[i].load_wh > max) max = hours[i].load_wh;
+  }
+  const int W = 480, H = 150, base = H - 18, bw = 8;
+
+  add(s, "<svg viewBox='0 0 %d %d' class='chart'>", W, H);
+  add(s, "<line x1='0' y1='%d' x2='%d' y2='%d' stroke='#2a2f36'/>", base, W, base);
+  for (int i = 0; i < HIST_HOURS; i++) {
+    int x = 10 + i * 19;
+    int sh = (int)(hours[i].solar_wh / max * (base - 10));
+    int lh = (int)(hours[i].load_wh / max * (base - 10));
+    if (sh > 0) add(s, "<rect x='%d' y='%d' width='%d' height='%d' fill='#f39c12'/>", x, base - sh, bw, sh);
+    if (lh > 0) add(s, "<rect x='%d' y='%d' width='%d' height='%d' fill='#e74c3c'/>", x + bw + 1, base - lh, bw, lh);
+  }
+  /* battery line, 0-100 % across the same area */
+  String pts;
+  for (int i = 0; i < HIST_HOURS; i++) {
+    if (isnan(hours[i].soc)) continue;
+    char p[16];
+    snprintf(p, sizeof(p), "%d,%d ", 10 + i * 19 + bw, (int)(base - hours[i].soc / 100.0f * (base - 10)));
+    pts += p;
+  }
+  if (pts.length()) add(s, "<polyline points='%s' fill='none' stroke='#3498db' stroke-width='2'/>", pts.c_str());
+  add(s, "<text x='4' y='%d' fill='#8a9099' font-size='10'>-23h</text>"
+         "<text x='%d' y='%d' fill='#8a9099' font-size='10' text-anchor='end'>now</text></svg>",
+      H - 4, W - 4, H - 4);
+  add(s, "<div class='sub'>Max %.0f Wh per hour &middot; <span style='color:#f39c12'>solar</span> &middot; "
+         "<span style='color:#e74c3c'>consumption</span> &middot; <span style='color:#3498db'>battery %%</span></div>", max);
+}
+
+/* The last ten minutes as a line, from the sparkline ring */
+static void svg_spark(String &s, float HistSample::*field, const char *color, const char *label, const char *unit) {
+  const HistSample *r = history_recent();
+  if (!r) return;
+  float mn = 1e9f, mx = -1e9f;
+  for (int i = 0; i < HIST_RECENT; i++) {
+    float v = r[i].*field;
+    if (isnan(v)) continue;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+  }
+  if (mn > mx) return;
+  if (mx - mn < 1) mx = mn + 1;
+
+  const int W = 230, H = 60;
+  String pts;
+  for (int i = 0; i < HIST_RECENT; i++) {
+    float v = r[i].*field;
+    if (isnan(v)) continue;
+    char p[16];
+    snprintf(p, sizeof(p), "%d,%d ", (int)(i * (W - 8) / (HIST_RECENT - 1)) + 4,
+             (int)(H - 14 - (v - mn) / (mx - mn) * (H - 22)));
+    pts += p;
+  }
+  add(s, "<div class='spark'><svg viewBox='0 0 %d %d'>"
+         "<polyline points='%s' fill='none' stroke='%s' stroke-width='2'/></svg>"
+         "<div class='sub'>%s, last 10 min (%.0f-%.0f %s)</div></div>",
+      W, H, pts.c_str(), color, label, mn, mx, unit);
+}
+
 /* ---------- HTML page ---------- */
 static void handle_root() {
   if (!authorized()) {
@@ -254,13 +330,19 @@ static void handle_root() {
   take_snapshot();
   uint32_t now = millis();
   String s;
-  s.reserve(8192);  // the page has grown: clock, weather, Victron, relays, Shelly
+  s.reserve(12288);  // clock, charts, weather, Victron, relays, Shelly
 
   char page_name[24];
   get_page_name(page_name, sizeof(page_name));
   s += FPSTR(PAGE_HEAD);
   add(s, "<meta http-equiv='refresh' content='5'><title>%s</title></head><body><h1>%s</h1>",
       esc_html(page_name).c_str(), esc_html(page_name).c_str());
+
+  /* ================= warnings and alarms ================= */
+  Alarm al[MAX_ALARMS];
+  int aln = alarms_get(al, MAX_ALARMS);
+  for (int i = 0; i < aln; i++)
+    add(s, "<div class='alarm lvl%d'>&#9888; %s</div>", al[i].level, esc_html(al[i].text).c_str());
 
   /* ================= start page: clock with gauges ================= */
   int bm = battery_monitor(now);
@@ -332,6 +414,15 @@ static void handle_root() {
     for (int i = 0; i < relay_cfg.count; i++) on += (relay_state >> i) & 1;
     add(s, "<div><span class='sub'>Relays</span><br><b>%d/%d</b></div>", on, relay_cfg.count);
   }
+  s += F("</div>");
+
+  /* ================= graphs ================= */
+  s += F("<h2>Last 24 hours</h2>");
+  svg_history(s);
+  s += F("<div class='sparks'>");
+  svg_spark(s, &HistSample::pv_w, "#f39c12", "Solar", "W");
+  svg_spark(s, &HistSample::soc, "#3498db", "Battery", "%");
+  svg_spark(s, &HistSample::load_w, "#e74c3c", "Consumption", "W");
   s += F("</div>");
 
   /* ================= weather ================= */
@@ -430,7 +521,7 @@ static void handle_root() {
   char pass[33];
   get_password(pass);
   add(s, "<p class='sub'>Updated every 5 s &middot; up %lu min &middot; <a href='/log'>log</a> &middot; <a href='/files'>files</a>%s</p>"
-         "<p class='sub'>&copy; %s %s Fredrik Rudin &middot; "
+         "<p class='sub'>v" FW_VERSION " &middot; built %s %s &middot; &copy; Fredrik Rudin<br>"
          "<a href='https://github.com/fredrikrudin/esp32-S3-ws4-caravan'>github.com/fredrikrudin/esp32-S3-ws4-caravan</a><br>"
          "med hj&auml;lp av claude.ai Opus 5</p></body></html>",
       (unsigned long)(now / 60000), pass[0] ? " &middot; <a href='/logout'>Log out</a>" : "", __DATE__, __TIME__);
@@ -504,6 +595,15 @@ static void handle_json() {
       add(s, "{\"name\":\"%s\",\"on\":%s,", esc_json(shelly_cfg[i].name).c_str(), sh[i].on ? "true" : "false");
       num_json(s, "power", sh[i].valid ? sh[i].power : NAN, 1);
       add(s, ",\"status\":\"%s\"}", esc_json(sh[i].status).c_str());
+    }
+  }
+  s += "],\"alarms\":[";
+  {
+    Alarm al[MAX_ALARMS];
+    int aln = alarms_get(al, MAX_ALARMS);
+    for (int i = 0; i < aln; i++) {
+      if (i) s += ',';
+      add(s, "{\"level\":%d,\"text\":\"%s\"}", al[i].level, esc_json(al[i].text).c_str());
     }
   }
   s += "],\"temperatures\":[";

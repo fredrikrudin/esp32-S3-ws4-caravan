@@ -13,7 +13,7 @@ static void log_battery_adv(const NimBLEAdvertisedDevice *dev, const std::string
   if (last && millis() - last < 10000) return;
   last = millis();
 
-  USBSerial.printf("BMS adv %s '%s' rssi %d\n", addr.c_str(), dev->getName().c_str(), dev->getRSSI());
+  dlogf("BMS adv %s '%s' rssi %d", addr.c_str(), dev->getName().c_str(), dev->getRSSI());
   for (uint8_t i = 0; i < dev->getManufacturerDataCount(); i++) {
     std::string md = dev->getManufacturerData(i);
     USBSerial.print("  manufacturer data:");

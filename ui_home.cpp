@@ -19,6 +19,8 @@ static lv_obj_t *lbl_soc, *lbl_batt_sub, *lbl_ttg_cap, *lbl_ttg;
 static lv_obj_t *lbl_solar, *lbl_solar_cap, *lbl_solar_sub;
 static lv_obj_t *home_clock, *home_date, *lbl_charging;
 static lv_obj_t *lbl_inside, *lbl_outside, *lbl_relays;
+static lv_obj_t *spark_batt, *spark_solar;
+static lv_obj_t *banner, *banner_lbl;
 
 static float solar_scale = 400;  // gauge top of scale, grows with the highest reading seen
 
@@ -60,6 +62,22 @@ void build_home_tab() {
   bar_batt = make_vbar(tab_home, true, COL_BATT_DEEP, COL_BATT_A);
   bar_solar = make_vbar(tab_home, false, COL_SOLAR_DEEP, COL_SOLAR_A);
 
+  /* warning/alarm banner across the top, hidden when all is well */
+  banner = lv_obj_create(tab_home);
+  lv_obj_remove_style_all(banner);
+  lv_obj_set_pos(banner, 36, 8);
+  lv_obj_set_size(banner, 408, 34);
+  lv_obj_set_style_radius(banner, 8, 0);
+  lv_obj_set_style_bg_opa(banner, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(banner, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(banner, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(banner, LV_OBJ_FLAG_HIDDEN);
+  banner_lbl = lv_label_create(banner);
+  lv_obj_set_width(banner_lbl, 390);
+  lv_label_set_long_mode(banner_lbl, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_align(banner_lbl, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_center(banner_lbl);
+
   /* centre: charging indicator, clock, date */
   lbl_charging = make_value(tab_home, LV_ALIGN_TOP_MID, 0, 44, LV_FONT_DEFAULT, 0x2ECC71);
   home_clock = lv_label_create(tab_home);
@@ -79,11 +97,17 @@ void build_home_tab() {
   lbl_solar_cap = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 274, LV_FONT_DEFAULT, 0x9E9E9E);
   lbl_solar_sub = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 300, LV_FONT_DEFAULT, 0xC8C8C8);
 
+  /* the last ten minutes, under each column */
+  spark_batt = make_sparkline(tab_home, COL_BATT_A, 150, 36, HIST_RECENT);
+  lv_obj_set_pos(spark_batt, 40, 340);
+  spark_solar = make_sparkline(tab_home, COL_SOLAR_A, 150, 36, HIST_RECENT);
+  lv_obj_set_pos(spark_solar, 290, 340);
+
   /* bottom strip: temperatures and relays */
   lv_obj_t *strip = lv_obj_create(tab_home);
   lv_obj_remove_style_all(strip);
-  lv_obj_set_pos(strip, 60, 366);
-  lv_obj_set_size(strip, 360, 52);
+  lv_obj_set_pos(strip, 60, 386);
+  lv_obj_set_size(strip, 360, 40);
   lv_obj_set_style_bg_color(strip, lv_color_hex(CARD_BG), 0);
   lv_obj_set_style_bg_opa(strip, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(strip, 12, 0);
@@ -102,10 +126,23 @@ void build_home_tab() {
 void home_timer_cb(lv_timer_t *t) {
   char b[96], tb[16], db[64];
   uint32_t now = millis();
+  if (!tab_visible(tab_home)) return;
 
   format_local_time(tb, db);
   set_label(home_clock, tb);
   set_label(home_date, db);
+
+  /* ---- banner ---- */
+  char msg[48];
+  uint8_t level;
+  if (alarms_top(msg, sizeof(msg), &level)) {
+    lv_obj_set_style_bg_color(banner, lv_color_hex(level == ALARM_LEVEL_ALARM ? 0xC0392B : 0xB9770E), 0);
+    snprintf(b, sizeof(b), LV_SYMBOL_WARNING "  %s", msg);
+    set_label(banner_lbl, b);
+    lv_obj_clear_flag(banner, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(banner, LV_OBJ_FLAG_HIDDEN);
+  }
 
   /* ---- Victron ---- */
   static VicCfg cfg[MAX_VIC];
@@ -197,6 +234,16 @@ void home_timer_cb(lv_timer_t *t) {
     set_label(lbl_solar_cap, "Solar");
     set_label(lbl_solar_sub, "No data");
     lv_bar_set_value(bar_solar, 0, LV_ANIM_OFF);
+  }
+
+  /* ---- the small graphs ---- */
+  const HistSample *rec = history_recent();
+  if (rec) {
+    static float buf[HIST_RECENT];
+    for (int i = 0; i < HIST_RECENT; i++) buf[i] = rec[i].soc;
+    set_sparkline(spark_batt, buf, HIST_RECENT, 5);
+    for (int i = 0; i < HIST_RECENT; i++) buf[i] = rec[i].pv_w;
+    set_sparkline(spark_solar, buf, HIST_RECENT, 20);
   }
 
   /* ---- bottom strip ---- */

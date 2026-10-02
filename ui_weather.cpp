@@ -104,6 +104,7 @@ void format_local_time(char *tb, char *db) {
 
 void clock_timer_cb(lv_timer_t *t) {
   char tb[16], db[64];
+  if (!tab_visible(tab_weather)) return;  // the screen saver has its own clock
   format_local_time(tb, db);
   set_label(lbl_clock, tb);
   set_label(lbl_date, db);

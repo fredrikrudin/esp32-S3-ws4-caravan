@@ -19,20 +19,31 @@ static const lv_btnmatrix_ctrl_t hex_kb_ctrl[] = {
 };
 
 /* ---------- keyboard ---------- */
+/* The settings page now has sub-pages, so pad the one that really scrolls */
+static lv_obj_t *kb_pad_target = NULL;
+
+static lv_obj_t *scrolling_parent(lv_obj_t *o) {
+  for (lv_obj_t *p = lv_obj_get_parent(o); p; p = lv_obj_get_parent(p))
+    if (lv_obj_has_flag(p, LV_OBJ_FLAG_SCROLLABLE)) return p;
+  return tab_settings;
+}
+
 void kb_show(lv_obj_t *ta) {
   // text areas made with hex = true get the hex keypad
   lv_keyboard_set_mode(kb, lv_obj_has_flag(ta, LV_OBJ_FLAG_USER_1) ? LV_KEYBOARD_MODE_USER_1 : LV_KEYBOARD_MODE_TEXT_LOWER);
   lv_keyboard_set_textarea(kb, ta);
   lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_set_style_pad_bottom(tab_settings, KB_H, 0);  // room to scroll above the keyboard
-  lv_obj_update_layout(tab_settings);
+  kb_pad_target = scrolling_parent(ta);
+  lv_obj_set_style_pad_bottom(kb_pad_target, KB_H, 0);  // room to scroll above the keyboard
+  lv_obj_update_layout(kb_pad_target);
   lv_obj_scroll_to_view_recursive(ta, LV_ANIM_ON);
 }
 
 void kb_hide() {
   lv_keyboard_set_textarea(kb, NULL);
   lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_set_style_pad_bottom(tab_settings, settings_pad_bottom, 0);
+  if (kb_pad_target) lv_obj_set_style_pad_bottom(kb_pad_target, 16, 0);
+  kb_pad_target = NULL;
 }
 
 /* The OK key calls the on_ready function given to make_ta() */
@@ -171,6 +182,54 @@ void set_segment(lv_obj_t *seg, bool on) {
   lv_btnmatrix_set_btn_ctrl(seg, on ? 1 : 0, LV_BTNMATRIX_CTRL_CHECKED);
 }
 
+/* A small graph with no axes, for the background of a tile or card.
+   Returns the chart; the series is the first one. */
+lv_obj_t *make_sparkline(lv_obj_t *parent, uint32_t color, int w, int h, int points) {
+  lv_obj_t *c = lv_chart_create(parent);
+  lv_obj_set_size(c, w, h);
+  lv_chart_set_type(c, LV_CHART_TYPE_LINE);
+  lv_chart_set_point_count(c, points);
+  lv_chart_set_div_line_count(c, 0, 0);
+  lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(c, 0, 0);
+  lv_obj_set_style_pad_all(c, 0, 0);
+  lv_obj_set_style_size(c, 0, LV_PART_INDICATOR);  // no dots
+  lv_obj_set_style_line_width(c, 2, LV_PART_ITEMS);
+  lv_obj_clear_flag(c, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+  lv_chart_add_series(c, lv_color_hex(color), LV_CHART_AXIS_PRIMARY_Y);
+  return c;
+}
+
+/* Fills a sparkline from an array, scaling itself; NAN leaves a gap */
+void set_sparkline(lv_obj_t *chart, const float *values, int n, float floor_max) {
+  lv_chart_series_t *s = lv_chart_get_series_next(chart, NULL);
+  if (!s) return;
+  float mn = 1e9f, mx = -1e9f;
+  for (int i = 0; i < n; i++) {
+    if (isnan(values[i])) continue;
+    if (values[i] < mn) mn = values[i];
+    if (values[i] > mx) mx = values[i];
+  }
+  if (mn > mx) {  // nothing to show
+    for (int i = 0; i < n; i++) lv_chart_set_value_by_id(chart, s, i, LV_CHART_POINT_NONE);
+    return;
+  }
+  if (mx < floor_max) mx = floor_max;  // keep a flat line from filling the whole height
+  if (mx - mn < 1) mn = mx - 1;
+  lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, (int)mn, (int)(mx + 1));
+  for (int i = 0; i < n; i++)
+    lv_chart_set_value_by_id(chart, s, i, isnan(values[i]) ? LV_CHART_POINT_NONE : (int)values[i]);
+}
+
+/* True when this tab is the one on screen and the screen saver isn't showing.
+   Timers use it to skip formatting nobody can see, which is most of the work. */
+bool tab_visible(lv_obj_t *tab) {
+  if (!tabview || !tab) return true;
+  if (lv_scr_act() != lv_obj_get_screen(tabview)) return false;  // screen saver or history
+  return lv_tabview_get_tab_act(tabview) == lv_obj_get_index(tab);
+}
+
 void set_label(lv_obj_t *l, const char *txt) {
   if (strcmp(lv_label_get_text(l), txt)) lv_label_set_text(l, txt);
 }
@@ -255,6 +314,7 @@ void build_ui() {
   lv_timer_create(clock_timer_cb, 500, NULL);
   lv_timer_create(net_poll_cb, 200, NULL);
   lv_timer_create(ruuvi_timer_cb, 1000, NULL);
+  lv_timer_create([](lv_timer_t *t) { alarms_check(); }, 1000, NULL);
   lv_timer_create(home_timer_cb, 1000, NULL);
   lv_timer_create(power_timer_cb, 1000, NULL);
   lv_timer_create(battery_timer_cb, 1000, NULL);

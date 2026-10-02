@@ -15,6 +15,8 @@ static lv_obj_t *sl_bl, *lbl_bl, *sl_bl_saver, *lbl_bl_saver;
 static lv_obj_t *lbl_scan;
 static lv_obj_t *dd_bms;
 static lv_obj_t *lbl_sdlog, *lbl_csv, *dd_csv;
+static lv_obj_t *lbl_lipo;
+static lv_obj_t *lbl_alarm, *sl_soc_warn, *sl_soc_alarm, *sl_wind;
 static char bms_dd_mac[MAX_BMS_SEEN][18];
 static uint8_t bms_dd_type[MAX_BMS_SEEN];
 static char bms_dd_name[MAX_BMS_SEEN][32];
@@ -115,7 +117,7 @@ static void ruuvi_open_editor(const char *mac, int slot) {
   lv_textarea_set_text(ta_rname, name);
   lv_label_set_text(lbl_ruuvi_msg, "");
   lv_obj_clear_flag(ruuvi_editor, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_update_layout(tab_settings);
+  lv_obj_update_layout(lv_obj_get_parent(ruuvi_editor));
   lv_obj_scroll_to_view_recursive(ruuvi_editor, LV_ANIM_ON);
 }
 
@@ -359,6 +361,79 @@ void bms_settings_refresh(const BmsSeen *seen, int n, uint32_t now) {
   }
 }
 
+/* ---------- power ---------- */
+/* Not called while the page is being built: reading the battery goes out over
+   I2C to the CH32 chip, and a fault there must not stop the UI coming up. */
+static void update_lipo_label(bool read_now = true) {
+  float v;
+  int pct;
+  bool chg;
+  if (!read_now) {
+    lv_label_set_text(lbl_lipo, "Onboard battery: tap Check battery");
+    return;
+  }
+  if (!board_battery(&v, &pct, &chg)) {
+    lv_label_set_text(lbl_lipo, "Onboard battery: none connected (running on external power)");
+    return;
+  }
+  lv_label_set_text_fmt(lbl_lipo, "Onboard battery: %d%%  (%d.%02d V)%s", pct, (int)v, (int)(v * 100) % 100,
+                        chg ? "  " LV_SYMBOL_CHARGE " charging" : "");
+}
+
+static void lipo_refresh_cb(lv_event_t *e) {
+  update_lipo_label();
+}
+
+static void powersave_cb(lv_event_t *e) {
+  feat_powersave = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  if (!feat_powersave) power_set_saving(false);
+}
+
+static void perflog_cb(lv_event_t *e) {
+  feat_perflog = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+}
+
+/* ---------- alarms ---------- */
+static void update_alarm_label() {
+  char b[128];
+  snprintf(b, sizeof(b), "Battery: warning below %d%%, alarm below %d%%%s",
+           alarm_cfg.soc_warn, alarm_cfg.soc_alarm, alarm_cfg.wind_warn ? "" : "\nWind warning off");
+  if (alarm_cfg.wind_warn) {
+    char w[40];
+    snprintf(w, sizeof(w), "\nWind warning at %d m/s", alarm_cfg.wind_warn);
+    strlcat(b, w, sizeof(b));
+  }
+  lv_label_set_text(lbl_alarm, b);
+}
+
+static void alarm_slider_cb(lv_event_t *e) {
+  lv_obj_t *sl = lv_event_get_target(e);
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_VALUE_CHANGED) {
+    int v = lv_slider_get_value(sl);
+    LOCK();
+    if (sl == sl_soc_warn) alarm_cfg.soc_warn = v;
+    else if (sl == sl_soc_alarm) alarm_cfg.soc_alarm = v;
+    else if (sl == sl_wind) alarm_cfg.wind_warn = v;
+    if (alarm_cfg.soc_alarm > alarm_cfg.soc_warn) alarm_cfg.soc_warn = alarm_cfg.soc_alarm;  // keep them in order
+    UNLOCK();
+    update_alarm_label();
+  } else if (code == LV_EVENT_RELEASED) {
+    cmd_save_alarm = true;
+  }
+}
+
+static void alarm_enable_cb(lv_event_t *e) {
+  alarm_cfg.enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_alarm = true;
+}
+
+static void alarm_wake_cb(lv_event_t *e) {
+  alarm_cfg.wake_saver = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_alarm = true;
+}
+
 /* ---------- confirmation dialog ---------- */
 static void (*confirm_action)() = nullptr;
 
@@ -517,13 +592,33 @@ static void feat_bms_cb(lv_event_t *e) {
 }
 
 /* ---------- build ---------- */
+/* Prepares one of the sub-pages: a scrolling column of section cards */
+static lv_obj_t *settings_page(lv_obj_t *tv, const char *name) {
+  lv_obj_t *p = lv_tabview_add_tab(tv, name);
+  lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(p, 16, 0);
+  lv_obj_set_style_pad_bottom(p, 16, 0);
+  return p;
+}
+
 void build_settings_tab() {
-  lv_obj_set_flex_flow(tab_settings, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(tab_settings, 16, 0);  // space between the section cards
-  lv_obj_set_style_pad_bottom(tab_settings, 16, 0);
+  lv_obj_set_style_pad_all(tab_settings, 0, 0);
+
+  /* a second row of tabs, so no page is longer than a couple of screens */
+  lv_obj_t *tv = lv_tabview_create(tab_settings, LV_DIR_TOP, 42);
+  lv_obj_set_size(tv, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_bg_opa(tv, LV_OPA_TRANSP, 0);
+  lv_obj_t *btns = lv_tabview_get_tab_btns(tv);
+  lv_obj_set_style_text_font(btns, LV_FONT_DEFAULT, 0);
+  lv_obj_set_style_bg_color(btns, lv_color_hex(0x1B1F24), 0);
+
+  lv_obj_t *p_conn = settings_page(tv, "Connect");
+  lv_obj_t *p_sens = settings_page(tv, "Sensors");
+  lv_obj_t *p_ctrl = settings_page(tv, "Control");
+  lv_obj_t *p_sys = settings_page(tv, "Device");
 
   /* ---- WiFi ---- */
-  lv_obj_t *sec = make_section(tab_settings, LV_SYMBOL_WIFI "  WiFi");
+  lv_obj_t *sec = make_section(p_conn, LV_SYMBOL_WIFI "  WiFi");
 
   lv_obj_t *row = make_row(sec, LV_FLEX_ALIGN_START);
   dd_ssid = lv_dropdown_create(row);
@@ -544,7 +639,7 @@ void build_settings_tab() {
   lv_label_set_text(lbl_wifi_status, "");
 
   /* ---- Web page ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_EYE_OPEN "  Web page");
+  sec = make_section(p_conn, LV_SYMBOL_EYE_OPEN "  Web page");
   lbl_web = lv_label_create(sec);
   lv_obj_set_width(lbl_web, LV_PCT(100));
   lv_label_set_long_mode(lbl_web, LV_LABEL_LONG_WRAP);
@@ -567,7 +662,7 @@ void build_settings_tab() {
   update_web_label();
 
   /* ---- Weather ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_GPS "  Weather location");
+  sec = make_section(p_conn, LV_SYMBOL_GPS "  Weather location");
   row = make_row(sec, LV_FLEX_ALIGN_START);
   ta_city = make_ta(row, "City (or City, Country)", locate_now);
   lv_obj_set_flex_grow(ta_city, 1);
@@ -579,7 +674,7 @@ void build_settings_tab() {
   lv_label_set_text(lbl_loc, "");
 
   /* ---- Temperature: RuuviTags ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_BLUETOOTH "  Temperature (RuuviTags)");
+  sec = make_section(p_sens, LV_SYMBOL_BLUETOOTH "  Temperature (RuuviTags)");
   make_switch_row(sec, "Read RuuviTags", feat_ruuvi, feat_ruuvi_cb);
 
   row = make_row(sec, LV_FLEX_ALIGN_START);
@@ -619,12 +714,16 @@ void build_settings_tab() {
   ruuvi_rebuild_list();
 
   /* ---- Battery ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_BATTERY_FULL "  Battery (BMS)");
+  sec = make_section(p_sens, LV_SYMBOL_BATTERY_FULL "  Battery (BMS)");
   make_switch_row(sec, "Read the battery BMS", feat_bms, feat_bms_cb);
   lv_obj_t *hint = make_grey_label(sec);
   lv_obj_set_width(hint, LV_PCT(100));
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+#if ENABLE_BMS
   lv_label_set_text(hint, "Close the battery's phone app first: it accepts only one connection. Likely batteries are listed first.");
+#else
+  lv_label_set_text(hint, "Battery reading is switched off in the firmware (ENABLE_BMS in app.h). The ECO-WORTHY protocol is not fully decoded yet.");
+#endif
 
   row = make_row(sec, LV_FLEX_ALIGN_START);
   dd_bms = lv_dropdown_create(row);
@@ -633,12 +732,12 @@ void build_settings_tab() {
   make_btn(row, LV_SYMBOL_BLUETOOTH " Connect", bms_connect_cb);
 
   /* ---- sections in their own files ---- */
-  settings_shelly(tab_settings);
-  settings_victron(tab_settings);
-  settings_relays(tab_settings);
+  settings_shelly(p_ctrl);
+  settings_victron(p_sens);
+  settings_relays(p_ctrl);
 
   /* ---- Display ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_IMAGE "  Display");
+  sec = make_section(p_sys, LV_SYMBOL_IMAGE "  Display");
   lbl_bl = lv_label_create(sec);
   sl_bl = make_slider(sec, 5, 100, bl_normal, bl_slider_cb);  // min 5% so the screen never goes black
   lbl_bl_saver = lv_label_create(sec);
@@ -646,15 +745,15 @@ void build_settings_tab() {
   update_bl_labels();
 
   /* ---- Sensor scan interval ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_REFRESH "  Sensor scan interval");
+  sec = make_section(p_sens, LV_SYMBOL_REFRESH "  Sensor scan interval");
   lbl_scan = lv_label_create(sec);
   make_slider(sec, 1, 10, scan_interval_s, scan_slider_cb);
   update_scan_label();
 
-  settings_i2c(tab_settings);
+  settings_i2c(p_ctrl);
 
   /* ---- SD card ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_SD_CARD "  SD card");
+  sec = make_section(p_sys, LV_SYMBOL_SD_CARD "  SD card");
   make_switch_row(sec, "Write the log to the card", feat_sdlog, sdlog_cb);
 
   lbl_sdlog = lv_label_create(sec);
@@ -702,19 +801,56 @@ void build_settings_tab() {
   lv_label_set_text(sd_hint, "Eject before pulling the card out. Files can be downloaded from the web page under /files. The backup contains WiFi and Victron keys, so keep the card safe. Restoring restarts the board.");
   update_sdlog_label();
 
+  /* ---- Power ---- */
+  sec = make_section(p_sys, LV_SYMBOL_BATTERY_2 "  Power");
+  make_switch_row(sec, "Slow the CPU while the screen sleeps", feat_powersave, powersave_cb);
+  make_switch_row(sec, "Log memory and CPU every 30 s", feat_perflog, perflog_cb);
+
+  lbl_lipo = lv_label_create(sec);
+  lv_obj_set_width(lbl_lipo, LV_PCT(100));
+  lv_label_set_long_mode(lbl_lipo, LV_LABEL_LONG_WRAP);
+  update_lipo_label(false);  // ask the chip only when the button is tapped
+  make_btn(sec, LV_SYMBOL_REFRESH " Check battery", lipo_refresh_cb);
+  lv_obj_t *pwr_hint = make_grey_label(sec);
+  lv_obj_set_width(pwr_hint, LV_PCT(100));
+  lv_label_set_long_mode(pwr_hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(pwr_hint, "WiFi modem sleep is always on. Tabs that are not on screen are not redrawn, which is where most of the CPU time went.");
+
+  /* ---- Alarms ---- */
+  sec = make_section(p_sys, LV_SYMBOL_WARNING "  Alarms");
+  make_switch_row(sec, "Show warnings and alarms", alarm_cfg.enabled, alarm_enable_cb);
+  make_switch_row(sec, "A new alarm wakes the screen", alarm_cfg.wake_saver, alarm_wake_cb);
+  lv_obj_t *alarm_hint = make_grey_label(sec);
+  lv_obj_set_width(alarm_hint, LV_PCT(100));
+  lv_label_set_long_mode(alarm_hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(alarm_hint, "Temperatures are never alarmed on: the caravan may be left unheated and a tag can sit outside or in a fridge.");
+
+  lbl_alarm = lv_label_create(sec);
+  lv_obj_set_width(lbl_alarm, LV_PCT(100));
+  lv_label_set_long_mode(lbl_alarm, LV_LABEL_LONG_WRAP);
+
+  lv_label_set_text(lv_label_create(sec), "Battery warning %");
+  sl_soc_warn = make_slider(sec, 10, 90, alarm_cfg.soc_warn, alarm_slider_cb);
+  lv_label_set_text(lv_label_create(sec), "Battery alarm %");
+  sl_soc_alarm = make_slider(sec, 5, 50, alarm_cfg.soc_alarm, alarm_slider_cb);
+  lv_label_set_text(lv_label_create(sec), "Wind warning m/s (0 = off)");
+  sl_wind = make_slider(sec, 0, 25, alarm_cfg.wind_warn, alarm_slider_cb);
+  update_alarm_label();
+
   /* ---- About ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_HOME "  About");
+  sec = make_section(p_sys, LV_SYMBOL_HOME "  About");
   lv_obj_t *about = make_grey_label(sec);
   lv_obj_set_width(about, LV_PCT(100));
   lv_label_set_long_mode(about, LV_LABEL_LONG_WRAP);
   /* LVGL's built-in fonts have no (c) sign and no a-umlaut, so plain ASCII here */
   lv_label_set_text(about,
-                    "(c) " __DATE__ " " __TIME__ " Fredrik Rudin\n"
+                    "Version " FW_VERSION "  -  built " __DATE__ " " __TIME__ "\n"
+                    "(c) Fredrik Rudin\n"
                     "github.com/fredrikrudin/esp32-S3-ws4-caravan\n"
                     "med hjalp av claude.ai Opus 5");
 
   /* ---- System ---- */
-  sec = make_section(tab_settings, LV_SYMBOL_POWER "  System");
+  sec = make_section(p_sys, LV_SYMBOL_POWER "  System");
   row = make_row(sec, LV_FLEX_ALIGN_START);
   make_btn(row, LV_SYMBOL_REFRESH " Restart", reboot_cb);
   make_btn(row, LV_SYMBOL_POWER " Shut down", shutdown_cb);

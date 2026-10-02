@@ -46,6 +46,14 @@ void build_shelly_tab() {
 
     c.sub = make_grey_label(c.box);
     lv_obj_align(c.sub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_width(c.sub, 240);
+    lv_label_set_long_mode(c.sub, LV_LABEL_LONG_DOT);
+    lv_obj_add_flag(c.box, LV_OBJ_FLAG_CLICKABLE);  // tapping the card retries at once
+    lv_obj_add_event_cb(
+      c.box, [](lv_event_t *e) {
+        shelly_retry((int)(intptr_t)lv_event_get_user_data(e));
+      },
+      LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
     c.seg = make_segment(c.box, shelly_seg_cb, (void *)(intptr_t)i);
     lv_obj_set_width(c.seg, 170);
@@ -55,6 +63,7 @@ void build_shelly_tab() {
 
 void shelly_timer_cb(lv_timer_t *t) {
   char b[64];
+  if (!tab_visible(tab_shelly)) return;
   int shown = 0;
 
   for (int i = 0; i < MAX_SHELLY; i++) {
@@ -75,6 +84,7 @@ void shelly_timer_cb(lv_timer_t *t) {
     set_label(c.power, b);
 
     if (d.valid && !isnan(d.voltage)) snprintf(b, sizeof(b), "%s  -  %.0f V  %.2f A", d.status, d.voltage, d.current);
+    else if (d.fails) snprintf(b, sizeof(b), LV_SYMBOL_WARNING " %s  -  tap to retry", d.status);
     else snprintf(b, sizeof(b), "%s", d.status);
     set_label(c.sub, b);
 
@@ -92,6 +102,7 @@ void shelly_timer_cb(lv_timer_t *t) {
 
 /* ---------- Settings: Shelly (Bluetooth) ---------- */
 static lv_obj_t *dd_shelly, *shelly_list, *lbl_shelly_msg;
+static lv_obj_t *ta_shelly_host, *ta_shelly_name, *row_ble, *row_wifi, *seg_transport;
 static lv_obj_t *shelly_list_lbl[MAX_SHELLY];
 static char sh_dd_mac[MAX_BMS_SEEN][18];
 static uint8_t sh_dd_type[MAX_BMS_SEEN];
@@ -115,7 +126,8 @@ static void shelly_list_rebuild() {
     lv_obj_t *l = lv_label_create(row);
     lv_obj_set_flex_grow(l, 1);
     lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
-    lv_label_set_text(l, shelly_cfg[i].name);
+    lv_label_set_text_fmt(l, "%s  (%s)", shelly_cfg[i].name,
+                          shelly_cfg[i].transport == SHELLY_WIFI ? shelly_cfg[i].host : "Bluetooth");
     shelly_list_lbl[i] = l;
     lv_obj_t *del = lv_btn_create(row);
     lv_obj_set_style_bg_color(del, lv_palette_main(LV_PALETTE_RED), 0);
@@ -135,6 +147,40 @@ static void shelly_list_rebuild() {
     lv_obj_t *l = make_grey_label(shelly_list);
     lv_label_set_text(l, "No devices paired yet");
   }
+}
+
+/* Bluetooth or WiFi: show the matching row */
+static void transport_cb(lv_event_t *e) {
+  bool wifi = (lv_btnmatrix_get_selected_btn(seg_transport) == 1);
+  if (wifi) {
+    lv_obj_add_flag(row_ble, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(row_wifi, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(lbl_shelly_msg, "Type the Shelly's IP address, as shown in the Shelly app or your router.");
+  } else {
+    lv_obj_clear_flag(row_ble, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(row_wifi, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(lbl_shelly_msg, "Enable Bluetooth on the Shelly first; the board bonds with it on the first connection.");
+  }
+}
+
+static void shelly_add_wifi_cb(lv_event_t *e) {
+  const char *host = lv_textarea_get_text(ta_shelly_host);
+  if (!host[0]) {
+    lv_label_set_text(lbl_shelly_msg, "Enter an IP address first");
+    return;
+  }
+  int used = 0;
+  for (int k = 0; k < MAX_SHELLY; k++) used += shelly_cfg[k].used;
+  if (used >= MAX_SHELLY) {
+    lv_label_set_text_fmt(lbl_shelly_msg, "Max %d devices. Remove one first.", MAX_SHELLY);
+    return;
+  }
+  shelly_add_wifi(host, lv_textarea_get_text(ta_shelly_name));
+  lv_label_set_text(lbl_shelly_msg, "Added. It is read within a few seconds.");
+  lv_textarea_set_text(ta_shelly_host, "");
+  lv_textarea_set_text(ta_shelly_name, "");
+  kb_hide();
+  shelly_list_rebuild();
 }
 
 static void shelly_add_cb(lv_event_t *e) {
@@ -160,11 +206,40 @@ void settings_shelly(lv_obj_t *page) {
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
   lv_label_set_text(hint, "Pair plugs and switches over Bluetooth. Enable Bluetooth on the Shelly first; the board bonds with it on the first connection.");
 
-  lv_obj_t *row = make_row(parent, LV_FLEX_ALIGN_START);
-  dd_shelly = lv_dropdown_create(row);
+  /* how to talk to the device */
+  static const char *tr_map[] = { "Bluetooth", "WiFi", "" };
+  seg_transport = lv_btnmatrix_create(parent);
+  lv_btnmatrix_set_map(seg_transport, tr_map);
+  lv_obj_set_size(seg_transport, LV_PCT(100), 46);
+  lv_btnmatrix_set_btn_ctrl_all(seg_transport, LV_BTNMATRIX_CTRL_CHECKABLE | LV_BTNMATRIX_CTRL_NO_REPEAT);
+  lv_btnmatrix_set_one_checked(seg_transport, true);
+  lv_btnmatrix_set_btn_ctrl(seg_transport, 0, LV_BTNMATRIX_CTRL_CHECKED);
+  lv_obj_set_style_bg_opa(seg_transport, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(seg_transport, 0, 0);
+  lv_obj_set_style_pad_all(seg_transport, 0, 0);
+  lv_obj_set_style_radius(seg_transport, 8, LV_PART_ITEMS);
+  lv_obj_set_style_bg_color(seg_transport, lv_color_hex(0x0E2233), LV_PART_ITEMS);
+  lv_obj_set_style_border_width(seg_transport, 1, LV_PART_ITEMS);
+  lv_obj_set_style_border_color(seg_transport, lv_color_hex(0x2F6FB5), LV_PART_ITEMS);
+  lv_obj_set_style_text_color(seg_transport, lv_color_white(), LV_PART_ITEMS);
+  lv_obj_set_style_bg_color(seg_transport, lv_color_hex(0x2F6FB5), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_add_event_cb(seg_transport, transport_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+  /* Bluetooth: pick from the devices in range */
+  row_ble = make_row(parent, LV_FLEX_ALIGN_START);
+  dd_shelly = lv_dropdown_create(row_ble);
   lv_obj_set_flex_grow(dd_shelly, 1);
   lv_dropdown_set_options(dd_shelly, "Searching...");
-  make_btn(row, LV_SYMBOL_PLUS " Pair", shelly_add_cb);
+  make_btn(row_ble, LV_SYMBOL_PLUS " Pair", shelly_add_cb);
+
+  /* WiFi: type an address */
+  row_wifi = make_row(parent, LV_FLEX_ALIGN_START);
+  ta_shelly_host = make_ta(row_wifi, "IP address", shelly_add_wifi_cb);
+  lv_obj_set_flex_grow(ta_shelly_host, 1);
+  ta_shelly_name = make_ta(row_wifi, "Name", shelly_add_wifi_cb);
+  lv_obj_set_width(ta_shelly_name, 120);
+  make_btn(row_wifi, LV_SYMBOL_PLUS " Add", shelly_add_wifi_cb);
+  lv_obj_add_flag(row_wifi, LV_OBJ_FLAG_HIDDEN);
 
   shelly_list = lv_obj_create(parent);
   lv_obj_remove_style_all(shelly_list);

@@ -47,6 +47,13 @@ void battery_timer_cb(lv_timer_t *t) {
   bms_get(&d);
   uint32_t now = millis();
   char b[160];
+  if (!tab_visible(tab_battery)) {  // the device pickers in Settings still need the scan results
+    BmsSeen list[MAX_BMS_SEEN];
+    int n = bms_get_seen(list, MAX_BMS_SEEN);
+    bms_settings_refresh(list, n, now);
+    shelly_settings_refresh(list, n, now);
+    return;
+  }
 
   set_label(lbl_bms_status, feat_bms ? d.status : "Battery reading is switched off. Switch it on under Settings.");
   bool fresh = feat_bms && d.valid && now - d.updated < 30000;

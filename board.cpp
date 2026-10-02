@@ -195,3 +195,36 @@ void set_backlight(uint8_t pct) {
   if (WS_CH32_IO::setPwm(Wire, pwm)) last = pwm;
   else USBSerial.printf("Backlight: setPwm(%u) failed\n", pwm);
 }
+
+/* ---------- onboard LiPo ----------
+   The CH32 chip measures the battery through a divider (REG_ADC).
+   There is no charge-status line, so "charging" is inferred from the voltage:
+   a single LiPo cell sits at 4.15 V or above only while on charge or just off it. */
+bool board_battery(float *volts, int *percent, bool *charging) {
+  float v = 0;
+  uint16_t raw = 0;  // always pass this: the library writes to it without checking for null
+  if (!WS_CH32_IO::readBatteryVoltage(Wire, &v, &raw, 4)) return false;
+  if (!raw) return false;  // no reading at all means nothing is connected
+  if (v < 2.5f) return false;  // nothing connected (or far too flat to be a cell)
+
+  if (volts) *volts = v;
+  if (charging) *charging = (v >= 4.15f);
+  if (percent) {
+    /* rough LiPo curve: 3.30 V empty, 3.70 nominal, 4.15 full */
+    static const float curve[][2] = { { 3.30f, 0 }, { 3.50f, 10 }, { 3.65f, 30 }, { 3.75f, 50 }, { 3.87f, 70 }, { 4.00f, 85 }, { 4.15f, 100 } };
+    float p = 100;
+    if (v <= curve[0][0]) {
+      p = 0;
+    } else {
+      for (unsigned i = 1; i < sizeof(curve) / sizeof(curve[0]); i++) {
+        if (v <= curve[i][0]) {
+          float span = curve[i][0] - curve[i - 1][0];
+          p = curve[i - 1][1] + (v - curve[i - 1][0]) / span * (curve[i][1] - curve[i - 1][1]);
+          break;
+        }
+      }
+    }
+    *percent = (int)(p + 0.5f);
+  }
+  return true;
+}

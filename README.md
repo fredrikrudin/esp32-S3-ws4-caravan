@@ -10,11 +10,13 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | | |
 |---|---|
 | ![Home](screen-home.png) | ![Power](screen-power.png) |
-| **Home** – clock between battery and solar gauges, with temperatures and relays below | **Power** – the battery in the middle, chargers left, AC side right, DC loads below |
-| ![Relays](screen-relays.png) | ![History](screen-history.png) |
-| **Relays** – one Off/On control per relay, in the Victron switch-pane style | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
+| **Home** – clock between battery and solar gauges, ten-minute graphs under each, temperatures and relays below | **Power** – the battery in the middle, chargers left, AC side right, DC loads below; each connection lights up in its own colour while energy flows |
+| ![Alarm](screen-alarm.png) | ![History](screen-history.png) |
+| **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
+| ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
+| **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
 | ![Settings](screen-settings.png) | |
-| **Settings** – grouped into sections, each feature with its own on/off switch | |
+| **Settings** – its own row of tabs (Connect, Sensors, Control, Device), each a few cards | |
 
 *Screens drawn to scale with example values.*
 
@@ -24,16 +26,18 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 |---|---|
 | **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
 | **Power** | Tap any tile for bar charts of the last 24 hours and 7 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style, with each connection lighting up in its device colour while energy flows |
-| **Battery** | The battery's own BMS over Bluetooth (ECO-WORTHY/BWOB and JBD protocols): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
-| **Shelly** | Up to 4 Shelly plugs/switches over Bluetooth (BLE RPC): on/off and power. Off by default; pair them under Settings |
+| **Battery** | *Off in this build (`ENABLE_BMS 0` in `app.h`).* The battery's own BMS over Bluetooth (ECO-WORTHY/BWOB and JBD protocols): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
+| **Shelly** | Up to 4 Shelly plugs/switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): on/off and power. Off by default; add them under Settings |
 | **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Each relay is an Off | On segmented control in the Victron switch-pane style, so a stray touch can't toggle anything |
 | **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
 | **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
 | **⚙ Settings** | WiFi, weather location, RuuviTags, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
 
-A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+**Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
 
-The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
+A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It also draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+
+The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
 Under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
@@ -51,9 +55,11 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 #define SAVER_LOW_SOC 20          // below this % the bar turns red
 ```
 
-A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+**Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
 
-The Settings page is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
+A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It also draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+
+The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
 Under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
 
@@ -108,6 +114,8 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `font_clock_96.c` | 96 px clock font for the screen saver (digits, `:` and `-`) |
 | `screen-*.png` | Screenshots for this README |
 | `memory.md` | Notes and plan for lowering memory use and latency |
+| `CHANGELOG.md` | What changed in each version |
+| `lv_conf.example.h` | LVGL settings that suit this board and PSRAM-less boards alike |
 
 ## Libraries
 
@@ -139,6 +147,13 @@ The libraries to install offline are in Waveshare's repository:
 - Board: ESP32S3 Dev Module
 - **PSRAM: OPI PSRAM** (the display framebuffer and LVGL buffers live there)
 - **Erase All Flash Before Sketch Upload: Disabled**, otherwise every upload wipes the saved settings
+
+⚠️ **`lv_conf.h` is shared by every sketch on your machine.** A copy written for a board
+without PSRAM (a small pool in internal RAM) will make this firmware run out of memory while
+building the UI and crash with `LoadProhibited`. `lv_conf.example.h` in this repository
+chooses the right pool automatically from `BOARD_HAS_PSRAM`, so it suits both this board and
+boards without PSRAM; copy it to `<Arduino>/libraries/lv_conf.h`. The boot log prints the pool
+size and warns if it ends up in the wrong place.
 
 Optional, in `lv_conf.h`:
 

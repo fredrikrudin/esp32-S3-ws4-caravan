@@ -37,7 +37,7 @@ static void vic_open_editor(const char *mac, uint8_t type, int slot) {
   lv_textarea_set_text(ta_vkey, keyhex);
   lv_label_set_text(lbl_vic_msg, vic_supported(type) ? "" : "Note: this device type can't be shown on the Power tab yet.");
   lv_obj_clear_flag(vic_editor, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_update_layout(tab_settings);
+  lv_obj_update_layout(lv_obj_get_parent(vic_editor));
   lv_obj_scroll_to_view_recursive(vic_editor, LV_ANIM_ON);
 }
 

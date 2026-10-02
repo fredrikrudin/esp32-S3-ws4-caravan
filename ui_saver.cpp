@@ -44,7 +44,7 @@ static void saver_update_soc() {
 }
 
 static void saver_wake_cb(lv_event_t *e) {
-  USBSerial.println("Screen saver off");
+  power_set_saving(false);
   set_backlight(bl_normal);
   lv_scr_load(main_scr);
   lv_disp_trig_activity(NULL);
@@ -101,13 +101,22 @@ void build_saver() {
 
 void saver_timer_cb(lv_timer_t *t) {
   bool active = (lv_scr_act() == saver_scr);
+
+  if (alarms_take_new() && alarm_cfg.wake_saver && active) {  // a new alarm wakes the screen
+    power_set_saving(false);
+    set_backlight(bl_normal);
+    lv_scr_load(main_scr);
+    lv_disp_trig_activity(NULL);
+    return;
+  }
   if (!active) {
     if (lv_disp_get_inactive_time(NULL) < SAVER_TIMEOUT_MS) return;
     kb_hide();
     saver_update_soc();  // fill it in before the screen shows
     lv_scr_load(saver_scr);
     set_backlight(bl_saver);
-    USBSerial.printf("Screen saver on (backlight %u%%)\n", bl_saver);
+    power_set_saving(true);
+    dlogf("Screen saver on (backlight %u%%)", bl_saver);
   }
 
   saver_update_soc();

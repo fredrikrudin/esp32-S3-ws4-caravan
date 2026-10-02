@@ -395,3 +395,23 @@ void sd_list_files(String &out) {
   }
   root.close();
 }
+
+/* One line per start, plus a warning when the build environment looks wrong.
+   LVGL's pool silently moving back into internal RAM (an updated lv_conf.h)
+   starved the UI and crashed it inside build_ui(); this makes that visible. */
+void log_boot_banner() {
+  logf("esp32-S3-ws4-caravan %s, built " __DATE__ " " __TIME__, FW_VERSION);
+  logf("LVGL %d.%d.%d, pool %u kB, internal free %u, psram free %u",
+       LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH,
+       (unsigned)(LV_MEM_SIZE / 1024),
+       heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+       heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#ifndef LV_MEM_POOL_ALLOC
+  logf("WARNING: LVGL's pool is in internal RAM. Put these in lv_conf.h:");
+  logf("  #define LV_MEM_POOL_INCLUDE <esp32-hal-psram.h>");
+  logf("  #define LV_MEM_POOL_ALLOC ps_malloc");
+  logf("  (without them the UI can run out of memory and crash in build_ui)");
+#endif
+  if (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) < 1000000)
+    logf("WARNING: little or no PSRAM. Set Tools -> PSRAM to OPI PSRAM.");
+}

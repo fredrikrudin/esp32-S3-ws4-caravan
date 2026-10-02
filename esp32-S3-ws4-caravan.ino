@@ -16,8 +16,10 @@ void setup() {
 
   board_init();  // IO expander, touch, display, LVGL
   log_begin();   // Serial + ring buffer (+ TF card when switched on)
+  log_boot_banner();
   if (feat_sdlog) sd_log_mount();  // before WiFi and Bluetooth, as in Waveshare's SD demo
   history_begin();
+  alarms_begin();
   state_init();
   load_cfg();
   relay_read_back();  // adopt the relays' current state (they keep it across ESP32 restarts)
@@ -45,6 +47,7 @@ void loop() {
   web_service();
   csv_service();
   history_service();
+  perf_service();
   lv_timer_handler();
   delay(5);
 }

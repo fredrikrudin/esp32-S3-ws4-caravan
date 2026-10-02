@@ -159,7 +159,7 @@ static uint32_t le32(const uint8_t *p) {
 }
 
 static void ew_decode(uint8_t cmd, const uint8_t *p, size_t n) {
-  logf("BMS EW frame cmd 0x%02X, %u bytes payload", cmd, (unsigned)n);
+  dlogf("BMS EW frame cmd 0x%02X, %u bytes payload", cmd, (unsigned)n);
   if (cmd == 0x21 && n >= 18) {
     xSemaphoreTake(bms_mtx, portMAX_DELAY);
     bms.volt = le16(p) / 1000.0f;
@@ -293,8 +293,8 @@ static void jbd_request(uint8_t cmd) {
 static void notify_cb(NimBLERemoteCharacteristic *chr, uint8_t *data, size_t len, bool is_notify) {
   char hex[100];
   hex_line(data, len, hex, sizeof(hex));
-  logf("BMS notify %s (%u bytes): %s", chr->getUUID().toString().c_str(), (unsigned)len, hex);
-  if (len && data[0] != 0xAA && data[0] != 0xDD) logf("  (start byte is neither AA nor DD - unknown frame)");
+  dlogf("BMS notify %s (%u bytes): %s", chr->getUUID().toString().c_str(), (unsigned)len, hex);
+  if (len && data[0] != 0xAA && data[0] != 0xDD) dlogf("  (start byte is neither AA nor DD - unknown frame)");
 
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   strlcpy(bms.last_frame, hex, sizeof(bms.last_frame));
@@ -331,10 +331,12 @@ static bool do_connect() {
   if (client->isConnected()) client->disconnect();
 
   set_status("Connecting to %s...", cfg.name);
+  xSemaphoreTake(ble_conn_mtx, portMAX_DELAY);  // one BLE connection attempt at a time
   ble_pause_scan(true);  // scanning and connecting at the same time is unreliable
   vTaskDelay(pdMS_TO_TICKS(200));
   bool ok = client->connect(NimBLEAddress(std::string(cfg.mac), cfg.addr_type));
   ble_pause_scan(false);
+  xSemaphoreGive(ble_conn_mtx);
   if (!ok) {
     set_status("Could not connect to %s. Is the phone app closed?", cfg.name);
     return false;

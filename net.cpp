@@ -237,9 +237,17 @@ static void save_pending() {
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
   }
+  if (cmd_save_alarm) {
+    cmd_save_alarm = false;
+    AlarmCfg copy;
+    LOCK();
+    copy = alarm_cfg;
+    UNLOCK();
+    prefs.putBytes("alarm", &copy, sizeof(copy));
+  }
   if (cmd_save_feat) {
     cmd_save_feat = false;
-    prefs.putUChar("feat", (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0));
+    prefs.putUChar("feat", (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0) | (feat_powersave ? 0 : 0x80));
     prefs.putUChar("csvmin", csv_interval_min);
   }
   if (cmd_save_shelly) {
@@ -333,6 +341,7 @@ static void net_task(void *arg) {
   WiFi.onEvent(wifi_event);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  WiFi.setSleep(true);  // modem sleep: less power, no downside for a polled page
   wifi_inited = true;  // setup() waits for this before starting Bluetooth
 
   bool was_up = false, ntp_started = false;

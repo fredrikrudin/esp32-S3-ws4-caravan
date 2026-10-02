@@ -19,7 +19,7 @@
 #define SHOW_HISTORY_BUTTON 0
 
 struct Tile {
-  lv_obj_t *box, *fill, *title, *big, *l1, *l2;
+  lv_obj_t *box, *fill, *title, *big, *l1, *l2, *spark;
   int w, h;
 };
 struct Flow {
@@ -126,6 +126,13 @@ static void make_tile(Tile &t, lv_obj_t *parent, const char *title, uint32_t col
   lv_obj_set_style_text_opa(t.l2, LV_OPA_80, 0);
   lv_obj_align(t.l2, LV_ALIGN_BOTTOM_MID, 0, -6);
   lv_label_set_text(t.l2, "");
+
+  /* last ten minutes, drawn faintly behind the text */
+  t.spark = make_sparkline(t.box, 0xFFFFFF, w - 8, 30, HIST_RECENT);
+  lv_obj_set_style_line_opa(t.spark, LV_OPA_50, LV_PART_ITEMS);
+  lv_obj_align(t.spark, LV_ALIGN_BOTTOM_MID, 0, -2);
+  lv_obj_move_background(t.spark);  // behind the labels
+  lv_obj_add_flag(t.spark, LV_OBJ_FLAG_HIDDEN);
 }
 
 void build_power_tab() {
@@ -258,6 +265,7 @@ void power_timer_cb(lv_timer_t *timer) {
 
   uint32_t now = millis();
   char b[96];
+  bool visible = tab_visible(tab_power);
   auto ok = [&](int i) {
     return i >= 0 && vic_fresh(dat[i], now) && dat[i].key_ok;
   };
@@ -309,6 +317,11 @@ void power_timer_cb(lv_timer_t *timer) {
     power_layout(has);
     if (any) lv_obj_add_flag(lbl_power_empty, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_clear_flag(lbl_power_empty, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  if (!visible) {  // nothing on screen: the settings list is all that still needs updating
+    victron_settings_refresh(cfg, dat, seen, now);
+    return;
   }
 
   /* ---- solar ---- */
@@ -470,6 +483,26 @@ void power_timer_cb(lv_timer_t *timer) {
                                                    : "Calculated";
     set_label(t.l2, note);
     set_flow_dir(flows[4], !isnan(loads) && loads > 2);
+  }
+
+  /* ---- the small graphs: the last ten minutes ---- */
+  const HistSample *rec = history_recent();
+  if (rec) {
+    static float buf[HIST_RECENT];
+    auto spark = [&](int tile, float HistSample::*field, bool show) {
+      Tile &t = tiles[tile];
+      if (!t.spark) return;
+      if (!show) {
+        lv_obj_add_flag(t.spark, LV_OBJ_FLAG_HIDDEN);
+        return;
+      }
+      for (int i = 0; i < HIST_RECENT; i++) buf[i] = rec[i].*field;
+      set_sparkline(t.spark, buf, HIST_RECENT, 10);
+      lv_obj_clear_flag(t.spark, LV_OBJ_FLAG_HIDDEN);
+    };
+    spark(T_SOLAR, &HistSample::pv_w, has[T_SOLAR]);
+    spark(T_LOADS, &HistSample::load_w, has[T_LOADS]);
+    spark(T_BATT, &HistSample::soc, has[T_BATT] && bm >= 0);
   }
 
   victron_settings_refresh(cfg, dat, seen, now);

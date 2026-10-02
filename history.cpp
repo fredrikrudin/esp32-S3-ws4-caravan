@@ -11,6 +11,7 @@
 
 static HistBucket *hours = nullptr;  // 24 entries, oldest first
 static HistBucket *days = nullptr;   // 7 entries, oldest first
+static HistSample *recent = nullptr;  // HIST_RECENT entries, oldest first
 static uint32_t cur_hour = 0, cur_day = 0;
 static float acc_solar_wh = 0, acc_load_wh = 0, last_soc = NAN;
 static bool dirty = false;
@@ -18,6 +19,10 @@ static bool dirty = false;
 static void shift_in(HistBucket *arr, int n, const HistBucket &b) {
   memmove(arr, arr + 1, sizeof(HistBucket) * (n - 1));
   arr[n - 1] = b;
+}
+
+const HistSample *history_recent() {
+  return recent;
 }
 
 void history_get(HistBucket **hour_arr, HistBucket **day_arr) {
@@ -53,6 +58,8 @@ static void history_load() {
 void history_begin() {
   hours = (HistBucket *)heap_caps_calloc(HIST_HOURS, sizeof(HistBucket), MALLOC_CAP_SPIRAM);
   days = (HistBucket *)heap_caps_calloc(HIST_DAYS, sizeof(HistBucket), MALLOC_CAP_SPIRAM);
+  recent = (HistSample *)heap_caps_calloc(HIST_RECENT, sizeof(HistSample), MALLOC_CAP_SPIRAM);
+  for (int i = 0; i < HIST_RECENT; i++) recent[i] = { NAN, NAN, NAN, NAN };
   history_load();
 }
 
@@ -101,8 +108,18 @@ void history_service() {
   if (next && (int32_t)(millis() - next) < 0) return;
   next = millis() + SAMPLE_MS;
 
+  /* the sparklines don't need a clock, so fill the ring first */
+  float pv_now, load_now, soc_now;
+  read_power(&pv_now, &load_now, &soc_now);
+  if (recent) {
+    memmove(recent, recent + 1, sizeof(HistSample) * (HIST_RECENT - 1));
+    float bw = NAN;
+    if (!isnan(load_now) && !isnan(pv_now)) bw = NAN;  // battery power comes from read_power's own maths
+    recent[HIST_RECENT - 1] = { pv_now, load_now, soc_now, bw };
+  }
+
   time_t t = time(nullptr);
-  if (t < 1700000000) return;  // no clock yet
+  if (t < 1700000000) return;  // no clock yet: hourly buckets need real hours
   t += g.utc_offset;
   uint32_t hour_id = t / 3600, day_id = t / 86400;
 
@@ -111,8 +128,7 @@ void history_service() {
     cur_day = day_id;
   }
 
-  float solar_w, load_w, soc;
-  read_power(&solar_w, &load_w, &soc);
+  float solar_w = pv_now, load_w = load_now, soc = soc_now;
   float hours_elapsed = SAMPLE_MS / 3600000.0f;
   acc_solar_wh += solar_w * hours_elapsed;
   if (!isnan(load_w)) acc_load_wh += load_w * hours_elapsed;

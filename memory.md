@@ -101,8 +101,10 @@ Before and after each change:
 - [x] WiFi before Bluetooth at startup; Bluetooth scanning paused while WiFi joins;
       WiFi failure reason shown in Settings and on the Serial Monitor
 - [x] `lv_conf.h`: memory pool to PSRAM (1)
-- [ ] Step 1: performance log + `DEBUG_LOG` switch (5)
-- [ ] Step 2: visible-tab-only updates, paused animations (6); JSON changes (3)
+- [x] Step 1: performance log (Settings -> Power) + `DEBUG_LOG` switch in `app.h` (5)
+- [x] Step 2: visible-tab-only updates (6); flow animations replaced by static coloured lines
+- [x] Power saving: WiFi modem sleep always on, CPU 240 -> 80 MHz while the screen saver shows
+- [ ] JSON allocator/filter for the weather fetch (3)
 - [ ] Step 3: `lv_conf.h` touch read period (7)
 - [x] NimBLE trimming (2): tried, no measurable gain (see above)
 - [ ] Step 4: draw buffers back to internal RAM (8), trim stacks (4)

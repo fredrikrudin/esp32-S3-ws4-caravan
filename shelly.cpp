@@ -19,9 +19,13 @@
 #include "app.h"
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
-#define SHELLY_POLL_MS 15000  // how often each device is read
-#define SHELLY_TIMEOUT 6000   // RPC answer timeout
+#define SHELLY_POLL_MS 15000   // how often each device is read
+#define SHELLY_TIMEOUT 6000    // BLE answer timeout
+#define SHELLY_HTTP_MS 4000    // WiFi request timeout
+#define SHELLY_MAX_BACKOFF 8   // failures beyond which the interval stops growing
 
 static const char *SHELLY_SVC = "5f6d4f53-5f52-5043-5f53-56435f49445f";
 static const char *SHELLY_DATA = "5f6d4f53-5f52-5043-5f64-6174615f5f5f";
@@ -65,15 +69,36 @@ void shelly_set(int idx, bool on) {
   set_req_idx = idx;  // picked up by the task
 }
 
+static int free_slot() {
+  for (int i = 0; i < MAX_SHELLY; i++)
+    if (!shelly_cfg[i].used) return i;
+  return -1;
+}
+
 void shelly_add(const char *mac, uint8_t addr_type, const char *name) {
   LOCK();
-  for (int i = 0; i < MAX_SHELLY; i++) {
-    if (shelly_cfg[i].used) continue;
+  int i = free_slot();
+  if (i >= 0) {
+    shelly_cfg[i] = {};
     shelly_cfg[i].used = true;
-    strlcpy(shelly_cfg[i].mac, mac, sizeof(shelly_cfg[i].mac));
+    shelly_cfg[i].transport = SHELLY_BLE;
     shelly_cfg[i].addr_type = addr_type;
+    strlcpy(shelly_cfg[i].mac, mac, sizeof(shelly_cfg[i].mac));
     strlcpy(shelly_cfg[i].name, name, sizeof(shelly_cfg[i].name));
-    break;
+  }
+  UNLOCK();
+  cmd_save_shelly = true;
+}
+
+void shelly_add_wifi(const char *host, const char *name) {
+  LOCK();
+  int i = free_slot();
+  if (i >= 0) {
+    shelly_cfg[i] = {};
+    shelly_cfg[i].used = true;
+    shelly_cfg[i].transport = SHELLY_WIFI;
+    strlcpy(shelly_cfg[i].host, host, sizeof(shelly_cfg[i].host));
+    strlcpy(shelly_cfg[i].name, name[0] ? name : host, sizeof(shelly_cfg[i].name));
   }
   UNLOCK();
   cmd_save_shelly = true;
@@ -121,6 +146,23 @@ static bool rpc_call(const char *json, String &answer) {
   return answer.length() >= rx_len;
 }
 
+/* ---------- WiFi: the same RPC methods over HTTP ---------- */
+static bool http_rpc(const ShellyCfg &c, const char *path, String &answer) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  WiFiClient client;
+  HTTPClient http;
+  http.setTimeout(SHELLY_HTTP_MS);
+  http.setConnectTimeout(SHELLY_HTTP_MS);
+  String url = String("http://") + c.host + path;
+  if (!http.begin(client, url)) return false;
+  int code = http.GET();
+  bool ok = (code == HTTP_CODE_OK);
+  if (ok) answer = http.getString();
+  else dlogf("Shelly HTTP %d for %s", code, url.c_str());
+  http.end();
+  return ok;
+}
+
 /* ---------- one device ---------- */
 static bool shelly_connect(const ShellyCfg &c) {
   if (!cl) {
@@ -152,6 +194,43 @@ static bool shelly_connect(const ShellyCfg &c) {
   return true;
 }
 
+/* Turns an RPC answer into values. Returns false if it wasn't understood. */
+static bool apply_status(int i, const String &answer) {
+  JsonDocument doc;
+  if (deserializeJson(doc, answer)) {
+    sh_status(i, "Bad answer");
+    return false;
+  }
+  JsonObject r = doc["result"].isNull() ? doc.as<JsonObject>() : doc["result"].as<JsonObject>();
+  if (r.isNull() || r["output"].isNull()) {
+    const char *err = doc["error"]["message"] | "No switch in the answer";
+    sh_status(i, "%s", err);
+    return false;
+  }
+  xSemaphoreTake(sh_mtx, portMAX_DELAY);
+  sh_data[i].on = r["output"] | false;
+  sh_data[i].power = r["apower"] | NAN;
+  sh_data[i].voltage = r["voltage"] | NAN;
+  sh_data[i].current = r["current"] | NAN;
+  sh_data[i].valid = true;
+  sh_data[i].updated = millis();
+  sh_data[i].fails = 0;
+  xSemaphoreGive(sh_mtx);
+  return true;
+}
+
+/* A failure: count it, say why, and let the values go stale after a few tries */
+static void note_failure(int i, const char *why) {
+  xSemaphoreTake(sh_mtx, portMAX_DELAY);
+  if (sh_data[i].fails < 255) sh_data[i].fails++;
+  uint8_t n = sh_data[i].fails;
+  if (n >= 3) sh_data[i].valid = false;  // stop showing values we can no longer trust
+  sh_data[i].connected = false;
+  snprintf(sh_data[i].status, sizeof(sh_data[i].status), n > 1 ? "%s (%u tries)" : "%s", why, n);
+  xSemaphoreGive(sh_mtx);
+  logf("Shelly %d: %s", i + 1, why);
+}
+
 /* Reads on/off and power; optionally switches first */
 static bool shelly_poll(int i, bool do_set, bool on) {
   ShellyCfg c;
@@ -161,11 +240,37 @@ static bool shelly_poll(int i, bool do_set, bool on) {
   if (!c.used) return false;
 
   sh_status(i, do_set ? "Switching..." : "Reading...");
+
+  /* ---------------- WiFi ---------------- */
+  if (c.transport == SHELLY_WIFI) {
+    if (WiFi.status() != WL_CONNECTED) {
+      note_failure(i, "No WiFi");
+      return false;
+    }
+    String answer;
+    if (do_set) {
+      char path[64];
+      snprintf(path, sizeof(path), "/rpc/Switch.Set?id=0&on=%s", on ? "true" : "false");
+      if (!http_rpc(c, path, answer)) {
+        note_failure(i, "Switching failed");
+        return false;
+      }
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    if (!http_rpc(c, "/rpc/Switch.GetStatus?id=0", answer)) {
+      note_failure(i, "No answer over WiFi");
+      return false;
+    }
+    if (!apply_status(i, answer)) return false;
+    sh_status(i, "OK over WiFi");
+    return true;
+  }
+
+  /* ---------------- Bluetooth ---------------- */
+  xSemaphoreTake(ble_conn_mtx, portMAX_DELAY);  // never connect while another task is connecting
   if (!shelly_connect(c)) {
-    sh_status(i, "No connection (paired?)");
-    xSemaphoreTake(sh_mtx, portMAX_DELAY);
-    sh_data[i].connected = false;
-    xSemaphoreGive(sh_mtx);
+    xSemaphoreGive(ble_conn_mtx);
+    note_failure(i, "No Bluetooth connection");
     return false;
   }
 
@@ -175,49 +280,44 @@ static bool shelly_poll(int i, bool do_set, bool on) {
     char req[96];
     snprintf(req, sizeof(req), "{\"id\":1,\"method\":\"Switch.Set\",\"params\":{\"id\":0,\"on\":%s}}", on ? "true" : "false");
     ok = rpc_call(req, answer);
-    if (!ok) sh_status(i, "Switching failed");
+    if (!ok) note_failure(i, "Switching failed");
     vTaskDelay(pdMS_TO_TICKS(200));
   }
   if (ok) {
     ok = rpc_call("{\"id\":2,\"method\":\"Switch.GetStatus\",\"params\":{\"id\":0}}", answer);
-    if (!ok) sh_status(i, "No answer");
+    if (!ok) note_failure(i, "No answer over Bluetooth");
   }
-
-  if (ok) {
-    JsonDocument doc;
-    if (deserializeJson(doc, answer)) {
-      sh_status(i, "Bad answer");
-      ok = false;
-    } else {
-      JsonObject r = doc["result"];
-      if (r.isNull()) {
-        sh_status(i, "%s", (const char *)(doc["error"]["message"] | "RPC error"));
-        ok = false;
-      } else {
-        xSemaphoreTake(sh_mtx, portMAX_DELAY);
-        sh_data[i].on = r["output"] | false;
-        sh_data[i].power = r["apower"] | NAN;
-        sh_data[i].voltage = r["voltage"] | NAN;
-        sh_data[i].current = r["current"] | NAN;
-        sh_data[i].valid = true;
-        sh_data[i].connected = true;
-        sh_data[i].updated = millis();
-        xSemaphoreGive(sh_mtx);
-        sh_status(i, "OK");
-      }
-    }
-  }
+  if (ok) ok = apply_status(i, answer);
+  if (ok) sh_status(i, "OK over Bluetooth");
 
   cl->disconnect();
   vTaskDelay(pdMS_TO_TICKS(100));
+  xSemaphoreGive(ble_conn_mtx);
   xSemaphoreTake(sh_mtx, portMAX_DELAY);
   sh_data[i].connected = false;
   xSemaphoreGive(sh_mtx);
   return ok;
 }
 
+static uint32_t next_poll[MAX_SHELLY] = { 0 };
+
+void shelly_retry(int idx) {
+  if (idx >= 0 && idx < MAX_SHELLY) next_poll[idx] = 0;  // the task picks it up within 200 ms
+}
+
+/* After a failure the interval doubles, up to about four minutes, so an absent
+   device doesn't keep the radio (or the WiFi) busy. */
+static uint32_t poll_delay(int i) {
+  uint8_t f;
+  xSemaphoreTake(sh_mtx, portMAX_DELAY);
+  f = sh_data[i].fails;
+  xSemaphoreGive(sh_mtx);
+  if (!f) return SHELLY_POLL_MS;
+  if (f > SHELLY_MAX_BACKOFF) f = SHELLY_MAX_BACKOFF;
+  return SHELLY_POLL_MS * (1u << (f - 1));
+}
+
 static void shelly_task(void *arg) {
-  static uint32_t next_poll[MAX_SHELLY] = { 0 };
   for (;;) {
     if (!feat_shelly) {
       vTaskDelay(pdMS_TO_TICKS(500));
@@ -229,7 +329,7 @@ static void shelly_task(void *arg) {
     if (req >= 0) {
       set_req_idx = -1;
       shelly_poll(req, true, set_req_on);
-      next_poll[req] = millis() + SHELLY_POLL_MS;
+      next_poll[req] = millis() + poll_delay(req);
     }
 
     /* otherwise read one device whose turn it is */
@@ -239,7 +339,7 @@ static void shelly_task(void *arg) {
       UNLOCK();
       if (!used || (int32_t)(millis() - next_poll[i]) < 0) continue;
       shelly_poll(i, false, false);
-      next_poll[i] = millis() + SHELLY_POLL_MS;
+      next_poll[i] = millis() + poll_delay(i);
       break;  // one device per round, so switching stays responsive
     }
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -253,5 +353,5 @@ void shelly_start() {
   /* Shelly requires bonding for RPC; "just works" pairing, no PIN */
   NimBLEDevice::setSecurityAuth(true, false, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-  xTaskCreatePinnedToCore(shelly_task, "shelly", 6144, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(shelly_task, "shelly", 8192, NULL, 1, NULL, 0);  // JSON parsing needs room
 }
