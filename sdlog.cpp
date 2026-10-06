@@ -214,8 +214,8 @@ bool sd_log_mount() {
   }
 
   if (!ok) {
-    strlcpy(sd_msg, "No card found", sizeof(sd_msg));
-    logf("SD: no card found - use Probe card in Settings");
+    strlcpy(sd_msg, "No card found (retrying every minute)", sizeof(sd_msg));
+    logf("SD: no card found - retrying every minute; use Probe card in Settings if it stays away");
     return false;
   }
 
@@ -293,7 +293,14 @@ void logf(const char *fmt, ...) {
   }
   ring_write(buf, n);
   if (feat_sdlog) {
-    if (!sd_mounted) sd_log_mount();
+    /* a missing card must not mean a full mount attempt per log line */
+    static uint32_t next_try = 0;
+    if (!sd_mounted && (int32_t)(millis() - next_try) >= 0) {
+      next_try = millis() + 60000;  // try again in a minute
+      xSemaphoreGive(log_mtx);      // mounting is slow: don't hold the log lock
+      sd_log_mount();
+      xSemaphoreTake(log_mtx, portMAX_DELAY);
+    }
     if (sd_mounted) {
       log_file.print(buf);
       if (millis() - last_flush > SD_FLUSH_MS) {

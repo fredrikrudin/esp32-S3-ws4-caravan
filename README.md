@@ -188,6 +188,13 @@ Switch on **Settings → SD card** to also append everything to `/caravan.log` o
 
 **Measurements as CSV:** switch on "Log measurements" to append a line to `/data.csv` every 1, 5, 15 or 60 minutes: time, SOC, battery voltage/current/power, solar power and yield, the three RuuviTag temperatures, outside temperature, relays on and Shelly power. Download it from `/files` and open it in a spreadsheet.
 
+**Running on the onboard battery:** with a LiPo in the board's connector and "Keep running on the
+battery" switched on under Settings → Device → Power, losing external power turns the display into
+a local instrument: WiFi and Bluetooth off, screen at 10%, CPU at 80 MHz, the last readings kept on
+screen and a "Running on battery" banner along the bottom with the charge left. At the threshold
+you set (20% by default) it closes the log, unmounts the card and sleeps. Plugging power back in
+restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly 10–15 hours.
+
 **Restart, shut down, full reset:** the System section at the end of Settings. Each asks for confirmation. Shutting down puts the board into deep sleep with the backlight off; the reset button wakes it. A full reset erases every setting, so back up to the card first.
 
 **Settings backup:** "Back up settings" writes everything to `/settings.json` on the card, including WiFi and Victron encryption keys, so keep the card safe. "Restore" reads it back and restarts the board, which is the quick way back after an accidental flash erase.

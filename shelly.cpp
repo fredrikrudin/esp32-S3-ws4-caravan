@@ -54,6 +54,14 @@ static void sh_status(int i, const char *fmt, ...) {
   USBSerial.printf("Shelly %d: %s\n", i + 1, buf);
 }
 
+/* True when Shelly is on and at least one device has been added */
+bool shelly_present() {
+  if (!feat_shelly) return false;
+  for (int i = 0; i < MAX_SHELLY; i++)
+    if (shelly_cfg[i].used) return true;
+  return false;
+}
+
 void shelly_get(int idx, ShellyData *out) {
   if (idx < 0 || idx >= MAX_SHELLY || !sh_mtx) {
     memset(out, 0, sizeof(*out));

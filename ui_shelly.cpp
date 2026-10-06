@@ -163,7 +163,8 @@ static void transport_cb(lv_event_t *e) {
   }
 }
 
-static void shelly_add_wifi_cb(lv_event_t *e) {
+/* The keyboard's OK key calls a plain function; the button calls the wrapper below */
+static void shelly_add_wifi_now() {
   const char *host = lv_textarea_get_text(ta_shelly_host);
   if (!host[0]) {
     lv_label_set_text(lbl_shelly_msg, "Enter an IP address first");
@@ -181,6 +182,10 @@ static void shelly_add_wifi_cb(lv_event_t *e) {
   lv_textarea_set_text(ta_shelly_name, "");
   kb_hide();
   shelly_list_rebuild();
+}
+
+static void shelly_add_wifi_cb(lv_event_t *e) {
+  shelly_add_wifi_now();
 }
 
 static void shelly_add_cb(lv_event_t *e) {
@@ -234,9 +239,9 @@ void settings_shelly(lv_obj_t *page) {
 
   /* WiFi: type an address */
   row_wifi = make_row(parent, LV_FLEX_ALIGN_START);
-  ta_shelly_host = make_ta(row_wifi, "IP address", shelly_add_wifi_cb);
+  ta_shelly_host = make_ta(row_wifi, "IP address", shelly_add_wifi_now);
   lv_obj_set_flex_grow(ta_shelly_host, 1);
-  ta_shelly_name = make_ta(row_wifi, "Name", shelly_add_wifi_cb);
+  ta_shelly_name = make_ta(row_wifi, "Name", shelly_add_wifi_now);
   lv_obj_set_width(ta_shelly_name, 120);
   make_btn(row_wifi, LV_SYMBOL_PLUS " Add", shelly_add_wifi_cb);
   lv_obj_add_flag(row_wifi, LV_OBJ_FLAG_HIDDEN);

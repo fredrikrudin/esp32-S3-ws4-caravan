@@ -85,6 +85,9 @@ const char *vic_alarm_text(uint16_t a) {
 }
 
 bool vic_fresh(const VicData &d, uint32_t now) {
+  /* on battery the radios are off, so the last readings are all there is:
+     keep showing them rather than letting everything go stale */
+  if (power_on_battery()) return d.last_seen != 0;
   return d.last_seen && now - d.last_seen < VIC_STALE_MS;
 }
 

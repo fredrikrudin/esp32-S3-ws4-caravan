@@ -6,7 +6,7 @@
 #include "app.h"
 #include <WiFi.h>
 
-AlarmCfg alarm_cfg = { true, 40, 20, 0, 12, true };  // temp_low is unused
+AlarmCfg alarm_cfg = { true, 40, 20, 0, 12, true, false };  // temp_low unused; card warning off by default
 
 static Alarm list[MAX_ALARMS];
 static int list_n = 0;
@@ -137,7 +137,9 @@ void alarms_check() {
   if (w.valid && alarm_cfg.wind_warn && w.wind >= alarm_cfg.wind_warn)
     add_alarm(ALARM_LEVEL_WARN, "Wind %.0f m/s - take the awning in", w.wind);
 
-  /* ---- WiFi ---- */
+  /* ---- WiFi (not while we have switched it off ourselves) ---- */
+  if (power_on_battery()) have_ssid = false;
+
   static uint32_t wifi_lost_since = 0;
   if (have_ssid && WiFi.status() != WL_CONNECTED) {
     if (!wifi_lost_since) wifi_lost_since = now;
@@ -169,7 +171,7 @@ void alarms_check() {
 
   /* ---- relays and card ---- */
   if (feat_relays && relay_cfg.addr && !pcf_ok) add_alarm(ALARM_LEVEL_WARN, "Relay board not answering");
-  if (feat_sdlog && !sd_log_ok()) add_alarm(ALARM_LEVEL_WARN, "SD card not available");
+  if (alarm_cfg.warn_sd && feat_sdlog && !sd_log_ok()) add_alarm(ALARM_LEVEL_WARN, "SD card not available");
 
   /* a new top alarm wakes the screen saver */
   char top[48] = "";

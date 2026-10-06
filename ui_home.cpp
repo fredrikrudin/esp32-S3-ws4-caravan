@@ -254,7 +254,7 @@ void home_timer_cb(lv_timer_t *t) {
     memcpy(copy, tags, sizeof(tags));
     xSemaphoreGive(ruuvi_mtx);
     for (int i = 0; i < MAX_TAGS; i++) {
-      if (copy[i].used && !strcmp(copy[i].addr, ruuvi_cfg[0].mac) && copy[i].has_temp && now - copy[i].last_seen < 600000UL) {
+      if (copy[i].used && !strcmp(copy[i].addr, ruuvi_cfg[0].mac) && copy[i].has_temp && (power_on_battery() || now - copy[i].last_seen < 600000UL)) {
         snprintf(b, sizeof(b), LV_SYMBOL_HOME " %.1f" DEG "C", copy[i].temp);
         break;
       }

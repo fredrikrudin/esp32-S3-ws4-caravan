@@ -228,6 +228,7 @@ struct AlarmCfg {
   int8_t temp_low;    // degC - frost alarm at or below this
   uint8_t wind_warn;  // m/s - 0 = off
   bool wake_saver;    // a new alarm wakes the screen saver
+  bool warn_sd;       // warn when the TF card is missing or unreadable
 };
 
 /* One recent sample, taken every 10 s, for the small graphs in the tiles */
@@ -323,7 +324,9 @@ extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth 
 extern volatile bool feat_remote;  // web page may switch relays and Shelly (default off)
 extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
 extern volatile bool feat_powersave;  // slow the CPU while the screen sleeps
-extern volatile bool feat_perflog;    // one performance line every 30 s
+extern volatile bool feat_perflog;
+extern volatile bool feat_battmode;        // run on the LiPo when external power goes
+extern volatile uint8_t batt_shutdown_pct;  // shut down at this charge
 extern volatile bool feat_csv;     // write measurements to /data.csv (default off)
 extern volatile uint8_t csv_interval_min;  // minutes between CSV lines
 
@@ -407,7 +410,10 @@ fs::FS &sd_fs();  // the mounted card (SD mode or SPI mode)
 /* power.cpp */
 void power_set_saving(bool screen_asleep);
 bool power_saving_active();
-void perf_service();  // call from loop()
+void perf_service();            // call from loop()
+void power_battery_service();   // call from loop(): watches the onboard cell
+bool power_on_battery();        // true while running on the LiPo
+void battery_monitor();         // call from loop(): one status line every 5 s
 
 /* alarms.cpp */
 void alarms_begin();
@@ -436,6 +442,7 @@ bool settings_restore();
 
 /* shelly.cpp (Shelly devices over BLE RPC; off until switched on in Settings) */
 void shelly_start();
+bool shelly_present();  // switched on and at least one device added
 void shelly_get(int idx, ShellyData *out);
 void shelly_set(int idx, bool on);  // switch a device on or off
 void shelly_add(const char *mac, uint8_t addr_type, const char *name);        // Bluetooth
@@ -444,6 +451,7 @@ void shelly_retry(int idx);  // poll this device again at once
 void shelly_remove(int idx);
 
 /* relays.cpp */
+bool relays_present();  // a board is set up and answering
 uint8_t relay_mask();
 bool relay_apply();      // write relay_state to the PCF8574
 void relay_read_back();  // read the relays' current state from the PCF8574

@@ -390,6 +390,32 @@ static void powersave_cb(lv_event_t *e) {
   if (!feat_powersave) power_set_saving(false);
 }
 
+static lv_obj_t *lbl_battmode, *sl_battpct;
+
+static void update_battmode_label() {
+  lv_label_set_text_fmt(lbl_battmode,
+                        feat_battmode
+                          ? "On battery: WiFi and Bluetooth off, screen at 10%%, last readings kept.\nShuts down at %d%%."
+                          : "Battery mode off: the board keeps running normally until the cell is flat.",
+                        batt_shutdown_pct);
+}
+
+static void battmode_cb(lv_event_t *e) {
+  feat_battmode = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_feat = true;
+  update_battmode_label();
+}
+
+static void battpct_cb(lv_event_t *e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_VALUE_CHANGED) {
+    batt_shutdown_pct = lv_slider_get_value(lv_event_get_target(e));
+    update_battmode_label();
+  } else if (code == LV_EVENT_RELEASED) {
+    cmd_save_feat = true;
+  }
+}
+
 static void perflog_cb(lv_event_t *e) {
   feat_perflog = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
 }
@@ -426,6 +452,11 @@ static void alarm_slider_cb(lv_event_t *e) {
 
 static void alarm_enable_cb(lv_event_t *e) {
   alarm_cfg.enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_alarm = true;
+}
+
+static void alarm_sd_cb(lv_event_t *e) {
+  alarm_cfg.warn_sd = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
   cmd_save_alarm = true;
 }
 
@@ -804,13 +835,21 @@ void build_settings_tab() {
   /* ---- Power ---- */
   sec = make_section(p_sys, LV_SYMBOL_BATTERY_2 "  Power");
   make_switch_row(sec, "Slow the CPU while the screen sleeps", feat_powersave, powersave_cb);
-  make_switch_row(sec, "Log memory and CPU every 30 s", feat_perflog, perflog_cb);
+  make_switch_row(sec, "Log memory, CPU and battery", feat_perflog, perflog_cb);
 
   lbl_lipo = lv_label_create(sec);
   lv_obj_set_width(lbl_lipo, LV_PCT(100));
   lv_label_set_long_mode(lbl_lipo, LV_LABEL_LONG_WRAP);
   update_lipo_label(false);  // ask the chip only when the button is tapped
   make_btn(sec, LV_SYMBOL_REFRESH " Check battery", lipo_refresh_cb);
+
+  make_switch_row(sec, "Keep running on the battery when power is lost", feat_battmode, battmode_cb);
+  lbl_battmode = lv_label_create(sec);
+  lv_obj_set_width(lbl_battmode, LV_PCT(100));
+  lv_label_set_long_mode(lbl_battmode, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(lv_label_create(sec), "Shut down at");
+  sl_battpct = make_slider(sec, 5, 60, batt_shutdown_pct, battpct_cb);
+  update_battmode_label();
   lv_obj_t *pwr_hint = make_grey_label(sec);
   lv_obj_set_width(pwr_hint, LV_PCT(100));
   lv_label_set_long_mode(pwr_hint, LV_LABEL_LONG_WRAP);
@@ -820,6 +859,7 @@ void build_settings_tab() {
   sec = make_section(p_sys, LV_SYMBOL_WARNING "  Alarms");
   make_switch_row(sec, "Show warnings and alarms", alarm_cfg.enabled, alarm_enable_cb);
   make_switch_row(sec, "A new alarm wakes the screen", alarm_cfg.wake_saver, alarm_wake_cb);
+  make_switch_row(sec, "Warn when the SD card is missing", alarm_cfg.warn_sd, alarm_sd_cb);
   lv_obj_t *alarm_hint = make_grey_label(sec);
   lv_obj_set_width(alarm_hint, LV_PCT(100));
   lv_label_set_long_mode(alarm_hint, LV_LABEL_LONG_WRAP);

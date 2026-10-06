@@ -17,7 +17,8 @@ void setup() {
   board_init();  // IO expander, touch, display, LVGL
   log_begin();   // Serial + ring buffer (+ TF card when switched on)
   log_boot_banner();
-  if (feat_sdlog) sd_log_mount();  // before WiFi and Bluetooth, as in Waveshare's SD demo
+  if (feat_sdlog && !sd_log_mount())
+    logf("SD: not mounted at startup; it is retried once a minute, or use Mount in Settings");
   history_begin();
   alarms_begin();
   state_init();
@@ -48,6 +49,8 @@ void loop() {
   csv_service();
   history_service();
   perf_service();
+  power_battery_service();
+  battery_monitor();
   lv_timer_handler();
   delay(5);
 }

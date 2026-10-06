@@ -21,6 +21,16 @@ static bool pcf_read(uint8_t addr, uint8_t *v) {
   return ok;
 }
 
+static uint32_t last_answer = 0;  // when the PCF8574 last replied
+
+/* True when a relay board is set up and answering (or answered recently).
+   The Relays tab uses this, so it only appears when there is something to switch. */
+bool relays_present() {
+  if (!feat_relays || !relay_cfg.addr) return false;
+  if (pcf_ok) return true;
+  return last_answer && millis() - last_answer < 30000;  // a short grace period
+}
+
 uint8_t relay_mask() {
   return relay_cfg.count >= 8 ? 0xFF : (uint8_t)((1 << relay_cfg.count) - 1);
 }
@@ -33,6 +43,7 @@ bool relay_apply() {
   uint8_t on = relay_state & relay_mask();
   uint8_t port = relay_cfg.active_low ? (uint8_t)~on : on;
   pcf_ok = pcf_write(relay_cfg.addr, port);
+  if (pcf_ok) last_answer = millis();
   return pcf_ok;
 }
 
@@ -40,6 +51,7 @@ void relay_read_back() {
   uint8_t port;
   if (feat_relays && relay_cfg.addr && pcf_read(relay_cfg.addr, &port)) {
     pcf_ok = true;
+    last_answer = millis();
     relay_state = (relay_cfg.active_low ? (uint8_t)~port : port) & relay_mask();
   } else {
     pcf_ok = false;

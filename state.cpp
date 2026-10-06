@@ -29,6 +29,8 @@ volatile bool feat_remote = false;  // switching from the web page is off until 
 volatile bool feat_sdlog = false;   // logging to the TF card is off until switched on
 volatile bool feat_powersave = true;   // on by default: it only slows the CPU while asleep
 volatile bool feat_perflog = false;
+volatile bool feat_battmode = false;  // off until switched on
+volatile uint8_t batt_shutdown_pct = 20;
 volatile bool feat_csv = false;     // measurement logging is off until switched on
 volatile uint8_t csv_interval_min = 5;
 volatile uint8_t scan_interval_s = 1;
@@ -70,6 +72,8 @@ void load_cfg() {
   feat_csv = feat & 0x40;
   feat_powersave = !(feat & 0x80);  // stored inverted, so old settings default to on
   csv_interval_min = constrain(prefs.getUChar("csvmin", 5), 1, 60);
+  feat_battmode = prefs.getUChar("battmode", 0);
+  batt_shutdown_pct = constrain(prefs.getUChar("battpct", 20), 5, 60);
 
   memset(shelly_cfg, 0, sizeof(shelly_cfg));
   if (prefs.getBytesLength("shelly") == sizeof(shelly_cfg)) prefs.getBytes("shelly", shelly_cfg, sizeof(shelly_cfg));

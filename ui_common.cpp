@@ -243,16 +243,26 @@ void ui_update_tabs() {
     uint16_t id;
     volatile bool *feature;
   } tabs[] = {
-    { 2, &feat_bms },     // Battery
-    { 3, &feat_relays },  // Relays
-    { 4, &feat_shelly },  // Shelly
-    { 5, &feat_ruuvi },   // Temp
+    { 2, &feat_ruuvi },   // Temp
+    { 4, &feat_bms },     // Battery
+    { 5, NULL },  // Shelly: see below
+    { 6, NULL },  // Relays: see below
   };
+  const bool wanted[] = { feat_ruuvi, feat_bms, shelly_present(), relays_present() };
+
+  /* nothing to do unless something actually changed */
+  static int last_mask = -1;
+  int mask = 0;
+  for (unsigned i = 0; i < sizeof(wanted) / sizeof(wanted[0]); i++) mask |= wanted[i] << i;
+  if (mask == last_mask) return;
+  last_mask = mask;
 
   uint16_t act = lv_tabview_get_tab_act(tabview);
   bool act_hidden = false;
+  int idx = -1;
   for (auto &t : tabs) {
-    if (*t.feature) {
+    idx++;
+    if (wanted[idx]) {
       lv_btnmatrix_clear_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_HIDDEN);
       lv_btnmatrix_clear_btn_ctrl(btns, t.id, LV_BTNMATRIX_CTRL_DISABLED);
       lv_btnmatrix_set_btn_width(btns, t.id, 10);
@@ -263,8 +273,7 @@ void ui_update_tabs() {
       if (act == t.id) act_hidden = true;
     }
   }
-  /* the remaining tabs share the width evenly */
-  const uint16_t always_on[] = { 0, 1, 6, 7 };
+  const uint16_t always_on[] = { 0, 1, 3, 7 };  // Start, Power, Weather, Settings
   for (uint16_t id : always_on) lv_btnmatrix_set_btn_width(btns, id, 10);
 
   if (act_hidden) lv_tabview_set_act(tabview, 0, LV_ANIM_OFF);
@@ -282,23 +291,25 @@ void build_ui() {
 
   lv_obj_t *tv = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 50);
   tabview = tv;
+  /* tab ids are used by ui_update_tabs():
+     0 Start, 1 Power, 2 Temp, 3 Weather, 4 Battery, 5 Shelly, 6 Relays, 7 Settings */
   tab_home = lv_tabview_add_tab(tv, LV_SYMBOL_HOME);  // start page
   tab_power = lv_tabview_add_tab(tv, "Power");
-  tab_battery = lv_tabview_add_tab(tv, "Battery");
-  tab_relays = lv_tabview_add_tab(tv, "Relays");
-  tab_shelly = lv_tabview_add_tab(tv, "Shelly");
   tab_temp = lv_tabview_add_tab(tv, "Temp");
   tab_weather = lv_tabview_add_tab(tv, "Weather");
+  tab_battery = lv_tabview_add_tab(tv, "Battery");
+  tab_shelly = lv_tabview_add_tab(tv, "Shelly");
+  tab_relays = lv_tabview_add_tab(tv, "Relays");
   tab_settings = lv_tabview_add_tab(tv, LV_SYMBOL_SETTINGS);  // gear icon
   settings_pad_bottom = lv_obj_get_style_pad_bottom(tab_settings, LV_PART_MAIN);
 
   build_home_tab();
   build_power_tab();
-  build_battery_tab();
-  build_relays_tab();
-  build_shelly_tab();
   build_temp_tab();
   build_weather_tab();
+  build_battery_tab();
+  build_shelly_tab();
+  build_relays_tab();
   build_settings_tab();
 
   kb = lv_keyboard_create(lv_scr_act());
@@ -314,7 +325,10 @@ void build_ui() {
   lv_timer_create(clock_timer_cb, 500, NULL);
   lv_timer_create(net_poll_cb, 200, NULL);
   lv_timer_create(ruuvi_timer_cb, 1000, NULL);
-  lv_timer_create([](lv_timer_t *t) { alarms_check(); }, 1000, NULL);
+  lv_timer_create([](lv_timer_t *t) {
+    alarms_check();
+    ui_update_tabs();  // a relay board or Shelly device appearing shows its tab
+  }, 1000, NULL);
   lv_timer_create(home_timer_cb, 1000, NULL);
   lv_timer_create(power_timer_cb, 1000, NULL);
   lv_timer_create(battery_timer_cb, 1000, NULL);
