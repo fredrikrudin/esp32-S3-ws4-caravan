@@ -22,6 +22,7 @@ void setup() {
   history_begin();
   alarms_begin();
   schedule_begin();
+  sw6106_begin();  // stop the power bank chip switching off under a light load
   state_init();
   load_cfg();
   relay_read_back();  // adopt the relays' current state (they keep it across ESP32 restarts)
@@ -53,6 +54,7 @@ void loop() {
   power_battery_service();
   battery_monitor();
   schedule_service();
+  sw6106_service();
   lv_timer_handler();
   delay(5);
 }

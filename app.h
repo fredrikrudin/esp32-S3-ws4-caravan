@@ -59,7 +59,7 @@ LV_FONT_DECLARE(font_clock_96)
 /* Firmware version. Bump the minor number when something user-visible changes,
    the major when the settings format does. Shown in Settings -> About, on the
    web page and in the first log line. */
-#define FW_VERSION "1.4"
+#define FW_VERSION "1.0.1 Stable"
 
 #define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
 /* Battery (BMS) support. Set to 1 to bring the tab and the ECO-WORTHY/JBD
@@ -417,6 +417,11 @@ bool sd_log_new_file();
 int sd_log_delete_old();
 void sd_list_files(String &out);
 fs::FS &sd_fs();  // the mounted card (SD mode or SPI mode)
+
+/* sw6106.cpp (power bank controller, where fitted) */
+void sw6106_begin();
+void sw6106_service();  // call from loop(): keep-alive against light-load shutdown
+bool sw6106_present();
 
 /* power.cpp */
 void power_set_saving(bool screen_asleep);

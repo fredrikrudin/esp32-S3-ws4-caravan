@@ -1,5 +1,7 @@
 # esp32-S3-ws4-caravan
 
+**Version 1.0.1 Stable.** What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+
 See **[BOARD_NOTES.md](BOARD_NOTES.md)** for hard-won notes about this board: SD card wiring, memory limits, LVGL 8 pitfalls and the BLE protocols used here.
 
 
@@ -24,18 +26,28 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 
 | Tab | What it shows |
 |---|---|
-| **⌂ Home** | Start page: large clock and date, surrounded by cards for solar, battery, inside temperature, outside weather and relays |
-| **Power** | Tap any tile for bar charts of the last 24 hours and 7 days. Victron devices over Bluetooth (Instant Readout): solar chargers, battery monitor, DC-DC, AC charger and inverter, in a classic Victron overview style, with each connection lighting up in its device colour while energy flows |
-| **Battery** | *Off in this build (`ENABLE_BMS 0` in `app.h`).* The battery's own BMS over Bluetooth (ECO-WORTHY/BWOB and JBD protocols): SOC, voltage, current, capacity, cycles, temperatures, cell voltages |
-| **Shelly** | Up to 4 Shelly plugs/switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): on/off and power. Off by default; add them under Settings |
-| **Relays** | Up to 8 relays on an external PCF8574 I2C board, with your own names. Each relay is an Off | On segmented control in the Victron switch-pane style, so a stray touch can't toggle anything |
-| **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, battery |
-| **Weather** | NTP clock, current weather and a 3-day forecast from Open-Meteo (no API key) |
-| **⚙ Settings** | WiFi, weather location, RuuviTags, display brightness, sensor scan interval, Victron devices, relay board, I2C scan |
+| **⌂ Start** | Large clock and date between two gradient gauges: battery on the left with Time To Go, solar on the right. Ten-minute graphs under each, then inside and outside temperature and how many relays are on. A warning banner appears across the top when something needs attention |
+| **Power** | The battery in the middle, chargers on the left, the AC side on the right, DC loads below. Each connection lights up in its device's colour while energy flows, and the solar, battery and loads tiles carry a ten-minute graph. Tap any tile for the history: solar and consumption per hour over 24 hours, or per day over 7 days |
+| **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery, signal and age |
+| **Weather** | Current conditions, high and low, feels-like, humidity, wind and a 3-day forecast (Open-Meteo) |
+| **Shelly** | Up to 4 plugs or switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): power, on/off, and the reason when something fails. Hidden until a device is added |
+| **Relays** | Up to 8 relays on a PCF8574, each an Off \| On control in the Victron switch-pane style. Hidden until a board answers |
+| **⚙ Settings** | Four sub-tabs: Connect, Sensors, Control, Device |
 
-**Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
+**Schedules**: one per relay and Shelly device, with an on time, an off time and the days it
+applies; a window may cross midnight. Switching by hand holds until the next scheduled change.
 
-A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It also draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+**Warnings and alarms** appear as a banner on the Start page and at the top of the web page:
+battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron
+device gone quiet, WiFi lost, the relay board not answering, strong wind, and optionally the
+SD card. Thresholds are under Settings → Device → Alarms, and a new alarm can wake the screen.
+
+**Running on the onboard battery**: with a LiPo fitted and the setting switched on, losing
+external power turns the display into a local instrument: WiFi and Bluetooth off, screen at 10%,
+CPU at 80 MHz, the last readings kept on screen and a "Running on battery" banner along the
+bottom. At your threshold it closes the log, unmounts the card and sleeps.
+
+**Screen saver**: after 30 s without touch, a 96-pixel clock and an SOC bar on a dimmed screen.
 
 ## Settings
 
@@ -44,22 +56,16 @@ Each page is a column of cards.
 
 | Page | Cards |
 |---|---|
-| **Connect** | **WiFi** (scan, password, status) &middot; **Web page** (name, password, remote admin) &middot; **Weather location** (city lookup) |
-| **Sensors** | **Temperature** (up to 3 named RuuviTags) &middot; **Battery (BMS)** &middot; **Victron devices** (add, name, encryption key, live status) &middot; **Sensor scan interval** (1–10 s) |
-| **Control** | **Shelly** (WiFi or Bluetooth, up to 4) &middot; **Relays** (PCF8574 address, active low, count, names) &middot; **I2C devices** (bus scan) |
-| **Device** | **Display** (brightness, screen saver brightness) &middot; **Power** (CPU slowdown, performance log, onboard LiPo) &middot; **Alarms** (thresholds, wake the screen) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **About** &middot; **System** (restart, shut down, full reset) |
+| **Connect** | **WiFi** (scan, password, status) &middot; **Web page** (run the server, name, password, remote admin) &middot; **Weather location** |
+| **Sensors** | **Temperature** (up to 3 RuuviTags) &middot; **Battery (BMS)** &middot; **Victron devices** (add, name, encryption key, live status) &middot; **Sensor scan interval** |
+| **Control** | **Shelly** (WiFi or Bluetooth, up to 4) &middot; **Schedules** (per relay and Shelly device) &middot; **Relays** (address, active low, count, names) &middot; **I2C devices** |
+| **Device** | **Power** (CPU slowdown, performance log, onboard LiPo, battery mode and its shutdown threshold) &middot; **Display** (brightness, screen saver brightness) &middot; **Alarms** (thresholds, wake the screen, SD warning) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **About** &middot; **System** (restart, shut down, full reset) |
 
 Temperature, Battery, Relays and Shelly each have an on/off switch: switching one off also stops
-its background work and takes its tab off the tab bar.
+its background work and takes its tab off the tab bar. Relays and Shelly also hide themselves
+when nothing is connected.
 
 ![Settings: Sensors](screen-settings-sensors.png)
-
-The web server can be switched off entirely under **Settings → Connect → Web page**, which frees
-the memory the page building uses. Otherwise, under **Settings → Web page** you can name the page (default "Waveshare"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `waveshare` is set by `MDNS_NAME` in `app.h`.
-
-After 30 seconds without touch, a screen saver shows a dim clock and the battery state of charge (bar, percentage and a charging symbol), and lowers the backlight. A tap wakes it.
-
-All settings are saved in flash and survive restarts.
 
 ## Screen saver
 
@@ -73,7 +79,7 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 
 **Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
 
-A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It also draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://waveshare.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It lists the **schedules** with an override button for each, shows the **board battery**, and draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
 
 The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
@@ -114,6 +120,9 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `shelly.cpp` | Shelly devices over BLE RPC (pairing, status, switching) |
 | `ruuvi.cpp` | RuuviTag decoding |
 | `victron.cpp` | Victron decryption and decoding |
+| `schedule.cpp` | Timed switching for relays and Shelly devices |
+| `ui_schedule.cpp` | Schedule editing in Settings |
+| `sw6106.cpp` | Power bank controller keep-alive, where fitted |
 | `relays.cpp` | PCF8574 relays and I2C scan |
 | `ui_common.cpp` | Tabs, keyboard, widget helpers, timers |
 | `ui_home.cpp` | Home tab (start page) |

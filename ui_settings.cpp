@@ -386,8 +386,10 @@ static void update_lipo_label(bool read_now = true) {
     lv_label_set_text(lbl_lipo, "Onboard battery: none connected (running on external power)");
     return;
   }
-  lv_label_set_text_fmt(lbl_lipo, "Onboard battery: %d%%  (%d.%02d V)%s", pct, (int)v, (int)(v * 100) % 100,
-                        chg ? "  " LV_SYMBOL_CHARGE " charging" : "");
+  lv_label_set_text_fmt(lbl_lipo, "Onboard battery: %d%%  (%d.%02d V)%s\n%s", pct, (int)v, (int)(v * 100) % 100,
+                        chg ? "  " LV_SYMBOL_CHARGE " charging" : "",
+                        sw6106_present() ? "SW6106 found: light-load shutdown disabled"
+                                         : "No SW6106 on this board");
 }
 
 static void lipo_refresh_cb(lv_event_t *e) {

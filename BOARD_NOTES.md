@@ -41,6 +41,11 @@ charge-status line, so charging has to be inferred (a cell at 4.15 V or above is
 Pass the `raw` pointer: leaving it at its `nullptr` default crashes with `LoadProhibited`,
 `EXCVADDR 0x00000000`.
 
+**SW6106 power bank controller (0x3C), on some revisions**: switches its output off under a
+light load, which is exactly what the board looks like on battery with the screen dimmed and the
+radios off. Write 0x0A to register 0x38 once, then 0x01 to register 0x03 about once a second as a
+keep-alive. Not present on every board; an I2C scan settles it.
+
 **Touch (GT911) sometimes doesn't answer after an upload.** A full power cycle clears it.
 Not a code fault; don't chase it.
 
