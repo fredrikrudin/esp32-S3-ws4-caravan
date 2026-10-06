@@ -361,5 +361,7 @@ void shelly_start() {
   /* Shelly requires bonding for RPC; "just works" pairing, no PIN */
   NimBLEDevice::setSecurityAuth(true, false, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-  xTaskCreatePinnedToCore(shelly_task, "shelly", 8192, NULL, 1, NULL, 0);  // JSON parsing needs room
+  /* measured: about 700 bytes used of 8 kB, but HTTPClient and JSON can spike,
+     so 5 kB keeps a wide margin and gives 3 kB back to the heap */
+  xTaskCreatePinnedToCore(shelly_task, "shelly", 5120, NULL, 1, NULL, 0);
 }

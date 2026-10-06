@@ -21,6 +21,7 @@ void setup() {
     logf("SD: not mounted at startup; it is retried once a minute, or use Mount in Settings");
   history_begin();
   alarms_begin();
+  schedule_begin();
   state_init();
   load_cfg();
   relay_read_back();  // adopt the relays' current state (they keep it across ESP32 restarts)
@@ -51,6 +52,7 @@ void loop() {
   perf_service();
   power_battery_service();
   battery_monitor();
+  schedule_service();
   lv_timer_handler();
   delay(5);
 }

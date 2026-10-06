@@ -246,6 +246,16 @@ struct HistBucket {
   float soc;  // state of charge at the end of the period, NAN if unknown
 };
 
+/* One timed schedule per output: relays first, then Shelly devices */
+#define SCHED_COUNT (MAX_RELAYS + MAX_SHELLY)
+
+struct Schedule {
+  bool enabled;
+  uint16_t on_min;   // minutes since midnight
+  uint16_t off_min;  // may be before on_min: the window then crosses midnight
+  uint8_t days;      // bit 0 = Sunday ... bit 6 = Saturday
+};
+
 /* Relays on an external PCF8574, saved to flash as one block */
 struct RelayCfg {
   uint8_t addr;     // 0 = not used, else 0x20-0x27 / 0x38-0x3F
@@ -313,7 +323,7 @@ extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly, cmd_save_alarm;
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly, cmd_save_alarm, cmd_save_sched;
 extern volatile bool scan_restart;
 
 /* Features that can be switched off in Settings (services stop too) */
@@ -321,6 +331,7 @@ extern volatile bool feat_ruuvi;   // Temp tab: RuuviTag reading
 extern volatile bool feat_relays;  // Relays tab: PCF8574
 extern volatile bool feat_bms;     // Battery tab: BMS connection
 extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth (default off)
+extern volatile bool feat_web;     // run the web server at all (default on)
 extern volatile bool feat_remote;  // web page may switch relays and Shelly (default off)
 extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
 extern volatile bool feat_powersave;  // slow the CPU while the screen sleeps
@@ -449,6 +460,20 @@ void shelly_add(const char *mac, uint8_t addr_type, const char *name);        //
 void shelly_add_wifi(const char *host, const char *name);                     // WiFi
 void shelly_retry(int idx);  // poll this device again at once
 void shelly_remove(int idx);
+
+/* schedule.cpp */
+extern Schedule sched[SCHED_COUNT];
+void schedule_begin();
+void schedule_service();  // call from loop()
+const char *schedule_target_name(int i);
+bool schedule_target_exists(int i);
+bool schedule_target_on(int i);
+void schedule_override(int i, bool on);  // switch by hand until the next change
+void schedule_resume(int i);
+bool schedule_overridden(int i);
+void schedule_status(int i, char *out, size_t len);
+void settings_schedule(lv_obj_t *parent);  // ui_schedule.cpp
+void schedule_settings_refresh();
 
 /* relays.cpp */
 bool relays_present();  // a board is set up and answering

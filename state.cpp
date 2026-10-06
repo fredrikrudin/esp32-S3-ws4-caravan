@@ -20,11 +20,12 @@ bool pcf_ok = false;
 
 volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
 volatile bool cmd_save_ruuvi = false, cmd_save_vic = false, cmd_save_scan = false;
-volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false, cmd_save_web = false, cmd_save_feat = false, cmd_save_shelly = false, cmd_save_alarm = false;
+volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false, cmd_save_web = false, cmd_save_feat = false, cmd_save_shelly = false, cmd_save_alarm = false, cmd_save_sched = false;
 volatile bool scan_restart = false;
 
 volatile bool feat_ruuvi = true, feat_relays = true, feat_bms = ENABLE_BMS;
 volatile bool feat_shelly = false;  // Shelly over Bluetooth is off until switched on
+volatile bool feat_web = true;      // the web server runs unless switched off
 volatile bool feat_remote = false;  // switching from the web page is off until switched on
 volatile bool feat_sdlog = false;   // logging to the TF card is off until switched on
 volatile bool feat_powersave = true;   // on by default: it only slows the CPU while asleep
@@ -68,6 +69,7 @@ void load_cfg() {
   feat_bms = (feat & 0x04) && ENABLE_BMS;  // ENABLE_BMS 0 overrides whatever was saved
   feat_shelly = feat & 0x08;
   feat_remote = feat & 0x10;
+  feat_web = !prefs.getUChar("noweb", 0);  // stored inverted, so old settings keep the server on
   feat_sdlog = feat & 0x20;
   feat_csv = feat & 0x40;
   feat_powersave = !(feat & 0x80);  // stored inverted, so old settings default to on

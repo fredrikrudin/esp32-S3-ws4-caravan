@@ -43,6 +43,10 @@ void perf_service() {
   next = millis() + 30000;
   if (!DEBUG_LOG && !feat_perflog) return;
 
+  static uint32_t worst = 0xFFFFFFFF;
+  uint32_t now_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  if (now_free < worst) worst = now_free;
+
   lv_mem_monitor_t mem;
   lv_mem_monitor(&mem);
   logf("perf: internal free %u (min %u, largest %u), psram free %u, lvgl %u%% of %u, cpu %d MHz",
@@ -55,15 +59,18 @@ void perf_service() {
 
   /* stack headroom, so the task sizes can be trimmed with confidence */
   const char *names[] = { "net", "bms", "shelly", "loopTask" };
-  char line[120] = "perf: stack left";
+  char line[140] = "perf: stack left";
+  bool tight = false;
   for (const char *n : names) {
     TaskHandle_t h = xTaskGetHandle(n);
     if (!h) continue;
+    unsigned left = uxTaskGetStackHighWaterMark(h);
+    if (left < 1024) tight = true;  // under 1 kB is close to a stack overflow
     char part[32];
-    snprintf(part, sizeof(part), " %s=%u", n, (unsigned)(uxTaskGetStackHighWaterMark(h)));
+    snprintf(part, sizeof(part), " %s=%u%s", n, left, left < 1024 ? "!" : "");
     strlcat(line, part, sizeof(line));
   }
-  logf("%s", line);
+  logf("%s%s", line, tight ? "  <- marked tasks are close to overflowing" : "");
 }
 
 /* ---------- running on the onboard LiPo ----------
@@ -135,7 +142,12 @@ static void soft_shutdown(int pct) {
   esp_deep_sleep_start();  // the reset button, or external power, starts it again
 }
 
-/* Called from loop(); samples the cell every 20 s */
+/* Called from loop(); samples the cell every 20 s.
+ * The reading jitters by about +-50 mV, so it is smoothed before anything is
+ * decided, and a USB host attached means external power whatever the voltage
+ * says. Without a USB host (a plain charger, or a wired 5 V supply) the
+ * smoothed voltage has to drop a long way below the charger's float level
+ * before battery mode starts. */
 void power_battery_service() {
   if (!feat_battmode) return;
   static uint32_t next = 0;
@@ -151,35 +163,41 @@ void power_battery_service() {
     if (on_battery) logf("Power: lost the battery reading");
     return;
   }
-  if (v < 3.0f || v > 4.4f) {  // implausible: don't act on a bad measurement
+  if (v < 3.0f || v > 4.6f) {  // implausible: don't act on a bad measurement
     logf("Power: ignoring a battery reading of %.2f V", v);
     return;
   }
 
-  /* three readings, so a momentary dip doesn't look like a power cut */
-  static float prev[3] = { 0, 0, 0 };
-  prev[0] = prev[1];
-  prev[1] = prev[2];
-  prev[2] = v;
-  bool falling = prev[0] > 0 && prev[0] - prev[2] > 0.015f && prev[1] >= prev[2];
+  /* smooth: a running average over about a minute */
+  static float avg = 0;
+  avg = avg ? avg * 0.7f + v * 0.3f : v;
+
+  bool usb = (bool)USBSerial;  // a USB host is attached: external power, certainly
 
   if (!on_battery) {
-    if (!charging && falling) enter_battery_mode(pct);
+    /* Two independent signs are wanted before the radios go off:
+       no USB host, and the smoothed voltage clearly below the charge rail. */
+    if (!usb && avg < 4.05f && !charging) {
+      static int low = 0;
+      if (++low >= 2) {  // about 40 s of agreement
+        low = 0;
+        enter_battery_mode((int)(avg > 4.0f ? 100 : pct));
+      }
+    }
   } else {
-    if (charging || (prev[0] > 0 && prev[2] - prev[0] > 0.02f)) {  // back on charge
+    if (usb || charging || avg > 4.10f) {  // power is back
       leave_battery_mode();
       return;
     }
-    /* two readings below the threshold before shutting down */
     static int low_count = 0;
     low_count = (pct <= batt_shutdown_pct) ? low_count + 1 : 0;
-    if (low_count >= 2) {
+    if (low_count >= 2) {  // two readings below the threshold
       soft_shutdown(pct);
       return;
     }
     if (batt_banner_lbl) {
       char b[64];
-      snprintf(b, sizeof(b), LV_SYMBOL_BATTERY_2 "  Running on battery  -  %d%%  (%.2f V)", pct, v);
+      snprintf(b, sizeof(b), LV_SYMBOL_BATTERY_2 "  Running on battery  -  %d%%  (%.2f V)", pct, avg);
       lv_label_set_text(batt_banner_lbl, b);
     }
   }

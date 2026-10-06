@@ -57,6 +57,10 @@ static void update_web_label() {
   LOCK();
   strlcpy(name, g.web_name, sizeof(name));
   UNLOCK();
+  if (!feat_web) {
+    lv_label_set_text(lbl_web, "Web server switched off. Nothing is served, and about 12 kB of memory is freed.");
+    return;
+  }
   lv_label_set_text_fmt(lbl_web, "\"%s\" at http://%s.local/ on the same WiFi.\n%s%s", name, MDNS_NAME,
                         has_pass ? "Password required." : "No password: anyone on the WiFi can view the page.",
                         feat_remote ? " Switching allowed." : "");
@@ -76,6 +80,12 @@ static void webpass_save_now() {
 
 static void webpass_save_cb(lv_event_t *e) {
   webpass_save_now();
+}
+
+static void web_enable_cb(lv_event_t *e) {
+  feat_web = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  cmd_save_web = true;
+  update_web_label();
 }
 
 static void remote_cb(lv_event_t *e) {
@@ -681,6 +691,7 @@ void build_settings_tab() {
   lv_obj_set_flex_grow(ta_webname, 1);
   lv_textarea_set_text(ta_webname, g.web_name);
 
+  make_switch_row(sec, "Run the web server", feat_web, web_enable_cb);
   make_switch_row(sec, "Remote admin: switch relays and Shelly from the web page", feat_remote, remote_cb);
 
   row = make_row(sec, LV_FLEX_ALIGN_START);
@@ -764,6 +775,7 @@ void build_settings_tab() {
 
   /* ---- sections in their own files ---- */
   settings_shelly(p_ctrl);
+  settings_schedule(p_ctrl);
   settings_victron(p_sens);
   settings_relays(p_ctrl);
 

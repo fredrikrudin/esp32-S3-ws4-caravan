@@ -237,6 +237,14 @@ static void save_pending() {
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
   }
+  if (cmd_save_sched) {
+    cmd_save_sched = false;
+    Schedule copy[SCHED_COUNT];
+    LOCK();
+    memcpy(copy, sched, sizeof(copy));
+    UNLOCK();
+    prefs.putBytes("sched", copy, sizeof(copy));
+  }
   if (cmd_save_alarm) {
     cmd_save_alarm = false;
     AlarmCfg copy;
@@ -272,6 +280,7 @@ static void save_pending() {
     strlcpy(name, g.web_name, sizeof(name));
     UNLOCK();
     prefs.putString("webname", name);
+    prefs.putUChar("noweb", feat_web ? 0 : 1);
   }
   if (cmd_save_bms) {
     cmd_save_bms = false;
@@ -427,5 +436,7 @@ static void net_task(void *arg) {
 }
 
 void net_start() {
-  xTaskCreatePinnedToCore(net_task, "net", 6144, NULL, 1, NULL, 0);  // plain HTTP needs a small stack
+  /* measured: only ~1.6 kB headroom at 6 kB, and this task does HTTP, JSON and
+     flash writes, so give it another 2 kB */
+  xTaskCreatePinnedToCore(net_task, "net", 8192, NULL, 1, NULL, 0);
 }

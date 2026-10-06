@@ -12,7 +12,7 @@ static lv_obj_t *lbl_shelly_empty;
 static void shelly_seg_cb(lv_event_t *e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
   bool want_on = (lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1);
-  shelly_set(i, want_on);  // the task switches and reads the state back
+  schedule_override(MAX_RELAYS + i, want_on);  // holds until the next scheduled change
   set_label(cards[i].sub, "Switching...");
 }
 
@@ -63,6 +63,7 @@ void build_shelly_tab() {
 
 void shelly_timer_cb(lv_timer_t *t) {
   char b[64];
+  schedule_settings_refresh();
   if (!tab_visible(tab_shelly)) return;
   int shown = 0;
 

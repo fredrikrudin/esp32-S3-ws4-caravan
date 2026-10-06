@@ -22,10 +22,7 @@ static void relay_refresh_ui() {
 static void relay_seg_cb(lv_event_t *e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
   bool want_on = (lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1);
-  uint8_t old = relay_state;
-  if (want_on) relay_state |= (1 << i);
-  else relay_state &= ~(1 << i);
-  if (!relay_apply()) relay_state = old;  // write failed: show the real state again
+  schedule_override(i, want_on);  // holds until the next scheduled change
   relay_refresh_ui();
 }
 

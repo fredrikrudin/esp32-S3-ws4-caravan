@@ -251,6 +251,15 @@ static int battery_monitor(uint32_t now) {
 
 
 
+/* Sends what has been built so far and empties the buffer, so the whole page is
+   never held in memory at once. Saves about 10 kB of internal RAM at the moment
+   the page is served, which is when free memory was at its lowest. */
+static void chunk(String &s, bool force = false) {
+  if (!force && s.length() < 1400) return;
+  if (s.length()) server.sendContent(s);
+  s = "";
+}
+
 /* ---------- charts, drawn as inline SVG (no JavaScript needed) ---------- */
 
 /* Bars of solar and consumption per hour, with the battery as a line on top */
@@ -329,8 +338,11 @@ static void handle_root() {
   }
   take_snapshot();
   uint32_t now = millis();
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);  // sent in pieces as it is built
+  server.send(200, "text/html; charset=utf-8", "");
+
   String s;
-  s.reserve(12288);  // clock, charts, weather, Victron, relays, Shelly
+  s.reserve(1600);  // one chunk at a time, not the whole page
 
   char page_name[24];
   get_page_name(page_name, sizeof(page_name));
@@ -344,6 +356,7 @@ static void handle_root() {
   for (int i = 0; i < aln; i++)
     add(s, "<div class='alarm lvl%d'>&#9888; %s</div>", al[i].level, esc_html(al[i].text).c_str());
 
+  chunk(s);
   /* ================= start page: clock with gauges ================= */
   int bm = battery_monitor(now);
   bool bms_fresh = feat_bms && bms.valid && now - bms.updated < 30000;
@@ -416,15 +429,19 @@ static void handle_root() {
   }
   s += F("</div>");
 
+  chunk(s);
   /* ================= graphs ================= */
   s += F("<h2>Last 24 hours</h2>");
   svg_history(s);
+  chunk(s);
   s += F("<div class='sparks'>");
   svg_spark(s, &HistSample::pv_w, "#f39c12", "Solar", "W");
+  chunk(s);
   svg_spark(s, &HistSample::soc, "#3498db", "Battery", "%");
   svg_spark(s, &HistSample::load_w, "#e74c3c", "Consumption", "W");
   s += F("</div>");
 
+  chunk(s);
   /* ================= weather ================= */
   s += F("<h2>Weather</h2>");
   if (!wx.valid) {
@@ -440,6 +457,7 @@ static void handle_root() {
     s += F("</div>");
   }
 
+  chunk(s);
   /* ================= Victron ================= */
   s += F("<h2>Victron devices</h2>");
   bool any = false;
@@ -467,6 +485,7 @@ static void handle_root() {
   }
   if (!any) s += F("<div class='sub'>No Victron devices added</div>");
 
+  chunk(s);
   /* ================= relays ================= */
   s += F("<h2>Relays</h2>");
   if (!feat_relays) {
@@ -491,6 +510,7 @@ static void handle_root() {
     }
   }
 
+  chunk(s);
   /* ================= Shelly ================= */
   s += F("<h2>Shelly</h2>");
   if (!feat_shelly) {
@@ -518,6 +538,53 @@ static void handle_root() {
     if (!any_sh) s += F("<div class='sub'>No Shelly devices paired</div>");
   }
 
+  /* ================= the board's own battery ================= */
+  {
+    float lipo_v;
+    int lipo_pct;
+    bool lipo_chg;
+    if (board_battery(&lipo_v, &lipo_pct, &lipo_chg)) {
+      s += F("<h2>Board battery</h2>");
+      add(s, "<div class='soc'>%d%%</div><div class='bar'><div style='width:%d%%'></div></div>", lipo_pct, lipo_pct);
+      add(s, "<div class='row'><span>%.2f V</span><span class='%s'>%s</span></div>", lipo_v,
+          lipo_chg ? "chg" : "sub",
+          lipo_chg ? "&#9889; Charging or full" : (power_on_battery() ? "Running on battery" : "On external power"));
+      if (power_on_battery())
+        add(s, "<div class='sub'>WiFi and Bluetooth are off; shutting down at %d%%</div>", batt_shutdown_pct);
+    }
+  }
+  chunk(s);
+
+  /* ================= schedules ================= */
+  {
+    bool any_sched = false;
+    for (int i = 0; i < SCHED_COUNT; i++) {
+      if (!schedule_target_exists(i) || !sched[i].enabled) continue;
+      if (!any_sched) s += F("<h2>Schedules</h2>");
+      any_sched = true;
+
+      char st[64];
+      schedule_status(i, st, sizeof(st));
+      bool on = schedule_target_on(i);
+      add(s, "<div class='row'><span>%s<br><span class='sub'>%s</span></span><span style='text-align:right'>",
+          esc_html(schedule_target_name(i)).c_str(), st);
+      if (feat_remote) {
+        add(s, "<form class='sw' method='post' action='/switch'><input type='hidden' name='sched' value='%d'>"
+               "<div class='seg'><button name='on' value='0' class='%s'>Off</button>"
+               "<button name='on' value='1' class='%s'>On</button></div>",
+            i, on ? "" : "act", on ? "act" : "");
+        if (schedule_overridden(i))
+          s += F("<button name='resume' value='1' class='sw' style='margin-top:6px'>Back on schedule</button>");
+        s += F("</form>");
+      } else {
+        add(s, "<span class='%s'>%s</span>", on ? "on" : "off", on ? "ON" : "OFF");
+      }
+      s += F("</span></div>");
+      chunk(s);
+    }
+  }
+  chunk(s);
+
   char pass[33];
   get_password(pass);
   add(s, "<p class='sub'>Updated every 5 s &middot; up %lu min &middot; <a href='/log'>log</a> &middot; <a href='/files'>files</a>%s</p>"
@@ -525,7 +592,8 @@ static void handle_root() {
          "<a href='https://github.com/fredrikrudin/esp32-S3-ws4-caravan'>github.com/fredrikrudin/esp32-S3-ws4-caravan</a><br>"
          "med hj&auml;lp av claude.ai Opus 5</p></body></html>",
       (unsigned long)(now / 60000), pass[0] ? " &middot; <a href='/logout'>Log out</a>" : "", __DATE__, __TIME__);
-  server.send(200, "text/html; charset=utf-8", s);
+  chunk(s, true);
+  server.sendContent("");  // end of the chunked reply
 }
 
 /* ---------- JSON ---------- */
@@ -536,8 +604,11 @@ static void handle_json() {
   }
   take_snapshot();
   uint32_t now = millis();
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+
   String s;
-  s.reserve(3072);
+  s.reserve(1200);
 
   int bm = battery_monitor(now);
   bool bms_fresh = bms.valid && now - bms.updated < 30000;
@@ -576,6 +647,7 @@ static void handle_json() {
     if (ok && cfg[i].type != VIC_BATTMON) add(s, ",\"state\":\"%s\"", vic_state_name(dat[i].state));
     s += '}';
   }
+  chunk(s);
   s += "],\"relays\":[";
 
   if (feat_relays && relay_cfg.addr && pcf_ok) {
@@ -617,7 +689,20 @@ static void handle_json() {
     num_json(s, "temperature", ruuvi_temp(i, now), 1);
     s += '}';
   }
-  s += "],\"weather\":{";
+  {  // the board's own battery
+    float lv;
+    int lp;
+    bool lc;
+    if (board_battery(&lv, &lp, &lc)) {
+      add(s, "],\"board_battery\":{\"percent\":%d,", lp);
+      num_json(s, "voltage", lv, 2);
+      add(s, ",\"charging\":%s,\"on_battery\":%s}", lc ? "true" : "false", power_on_battery() ? "true" : "false");
+    } else {
+      s += "],\"board_battery\":null";
+    }
+  }
+  chunk(s);
+  s += ",\"weather\":{";
   if (wx.valid) {
     num_json(s, "temperature", wx.temp, 1);
     s += ',';
@@ -641,7 +726,8 @@ static void handle_json() {
     s += ']';
   }
   s += "}}";
-  server.send(200, "application/json", s);
+  chunk(s, true);
+  server.sendContent("");
 }
 
 /* The log, as plain text: handy when no computer is attached to the USB port */
@@ -651,9 +737,12 @@ static void handle_log() {
     return;
   }
   String s;
-  log_dump(s);
+  log_dump(s);  // the ring buffer lives in PSRAM, but this copy does not
   if (!s.length()) s = "(log is empty)";
-  server.send(200, "text/plain; charset=utf-8", s);
+  server.setContentLength(s.length());
+  server.send(200, "text/plain; charset=utf-8", "");
+  server.sendContent(s);
+  s = String();  // free it before returning
 }
 
 /* Files on the TF card: a list, or one file as a download */
@@ -686,8 +775,11 @@ static void handle_files() {
 
   String list;
   sd_list_files(list);
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html; charset=utf-8", "");
+
   String s;
-  s.reserve(1024);
+  s.reserve(800);
   s += FPSTR(PAGE_HEAD);
   char name[24];
   get_page_name(name, sizeof(name));
@@ -704,9 +796,11 @@ static void handle_files() {
     long size = line.substring(tab + 1).toInt();
     add(s, "<div class='row'><span><a href='/files?name=%s'>%s</a></span><span class='sub'>%ld kB</span></div>",
         esc_html(fname.c_str()).c_str(), esc_html(fname.c_str()).c_str(), size / 1024);
+    chunk(s);
   }
   s += F("<p class='sub'><a href='/'>back</a></p></body></html>");
-  server.send(200, "text/html; charset=utf-8", s);
+  chunk(s, true);
+  server.sendContent("");
 }
 
 /* Switching from the web page: only with "Remote admin" enabled, and logged in */
@@ -721,26 +815,42 @@ static void handle_switch() {
   }
   bool on = server.arg("on") == "1";
 
+  if (server.hasArg("sched")) {  // an override, or back on schedule
+    int i = server.arg("sched").toInt();
+    if (i >= 0 && i < SCHED_COUNT) {
+      if (server.hasArg("resume")) schedule_resume(i);
+      else schedule_override(i, on);
+    }
+    redirect("/");
+    return;
+  }
+
   if (server.hasArg("relay")) {
     int i = server.arg("relay").toInt();
     if (feat_relays && relay_cfg.addr && i >= 0 && i < relay_cfg.count) {
-      uint8_t old = relay_state;
-      if (on) relay_state |= (1 << i);
-      else relay_state &= ~(1 << i);
-      if (!relay_apply()) relay_state = old;  // write failed: keep the real state
-      USBSerial.printf("Web: relay %d -> %s\n", i + 1, on ? "ON" : "OFF");
+      schedule_override(i, on);  // holds until the next scheduled change
+      logf("Web: relay %d -> %s", i + 1, on ? "ON" : "OFF");
     }
   } else if (server.hasArg("shelly")) {
     int i = server.arg("shelly").toInt();
     if (feat_shelly && i >= 0 && i < MAX_SHELLY && shelly_cfg[i].used) {
-      shelly_set(i, on);
-      USBSerial.printf("Web: Shelly %d -> %s\n", i + 1, on ? "ON" : "OFF");
+      schedule_override(MAX_RELAYS + i, on);
+      logf("Web: Shelly %d -> %s", i + 1, on ? "ON" : "OFF");
     }
   }
   redirect("/");
 }
 
 void web_service() {
+  if (!feat_web) {  // switched off in Settings
+    if (started) {
+      server.stop();
+      MDNS.end();
+      started = false;
+      logf("Web server stopped");
+    }
+    return;
+  }
   if (!started) {
     if (WiFi.status() != WL_CONNECTED) return;  // start once WiFi is up
     new_token();
@@ -759,7 +869,7 @@ void web_service() {
     server.begin();
     started = true;
     if (MDNS.begin(MDNS_NAME)) MDNS.addService("http", "tcp", 80);
-    USBSerial.printf("Web server: http://%s.local/ or http://%s/\n", MDNS_NAME, WiFi.localIP().toString().c_str());
+    logf("Web server: http://%s.local/ or http://%s/", MDNS_NAME, WiFi.localIP().toString().c_str());
     return;
   }
   server.handleClient();
