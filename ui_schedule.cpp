@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Settings -> Control -> Schedules.
    One output at a time: pick it from the dropdown, set the times and the days.
    Relays come first in the list, then Shelly devices. */
@@ -6,7 +7,7 @@
 static lv_obj_t *dd_target, *sw_enabled, *ta_on, *ta_off, *bm_days, *lbl_sched;
 static int sel = 0;  // which output is being edited
 
-static const char *day_map[] = { "Su", "Mo", "Tu", "We", "Th", "Fr", "Sa", "" };
+static const char *day_map[8];  // bit 0 = Monday; filled when built, translated
 
 static void fmt_time(uint16_t minutes, char *out, size_t len) {
   snprintf(out, len, "%02d:%02d", minutes / 60, minutes % 60);
@@ -134,6 +135,8 @@ void settings_schedule(lv_obj_t *page) {
   lv_textarea_set_max_length(ta_off, 5);
 
   bm_days = lv_btnmatrix_create(parent);
+  for (int i = 0; i < 7; i++) day_map[i] = tr_day_short(i);
+  day_map[7] = "";
   lv_btnmatrix_set_map(bm_days, day_map);
   lv_obj_set_size(bm_days, LV_PCT(100), 46);
   lv_btnmatrix_set_btn_ctrl_all(bm_days, LV_BTNMATRIX_CTRL_CHECKABLE | LV_BTNMATRIX_CTRL_NO_REPEAT);

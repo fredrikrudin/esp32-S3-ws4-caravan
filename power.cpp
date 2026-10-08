@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Power saving and a periodic performance log.
  *
  * Power saving does two things while the screen saver is showing: the CPU drops
@@ -104,7 +105,7 @@ static void make_banner() {
 
 static void enter_battery_mode(int pct) {
   on_battery = true;
-  logf("Power: external power lost, running on the battery (%d%%)", pct);
+  log_fault("Power: external power lost, running on the battery (%d%%)", pct);
 
   /* a local display from here on */
   ble_pause_scan(true);
@@ -130,7 +131,7 @@ static void leave_battery_mode() {
 }
 
 static void soft_shutdown(int pct) {
-  logf("Power: battery at %d%% - shutting down", pct);
+  log_fault("Power: battery at %d%% - shutting down", pct);
   make_banner();
   lv_label_set_text(batt_banner_lbl, "Battery empty - shutting down");
   lv_obj_clear_flag(batt_banner, LV_OBJ_FLAG_HIDDEN);
@@ -160,11 +161,11 @@ void power_battery_service() {
   int pct;
   bool charging;
   if (!board_battery(&v, &pct, &charging)) {  // no cell fitted, or no reading
-    if (on_battery) logf("Power: lost the battery reading");
+    if (on_battery) log_fault("Power: lost the battery reading");
     return;
   }
   if (v < 3.0f || v > 4.6f) {  // implausible: don't act on a bad measurement
-    logf("Power: ignoring a battery reading of %.2f V", v);
+    log_fault("Power: ignoring a battery reading of %.2f V", v);
     return;
   }
 
@@ -197,7 +198,7 @@ void power_battery_service() {
     }
     if (batt_banner_lbl) {
       char b[64];
-      snprintf(b, sizeof(b), LV_SYMBOL_BATTERY_2 "  Running on battery  -  %d%%  (%.2f V)", pct, avg);
+      snprintf(b, sizeof(b), TR(LV_SYMBOL_BATTERY_2 "  Running on battery  -  %d%%  (%.2f V)"), pct, avg);
       lv_label_set_text(batt_banner_lbl, b);
     }
   }
@@ -229,7 +230,7 @@ void battery_monitor() {
   prev = v;
 
   if (!read_ok) {
-    logf("BATT: no reading from the CH32 (I2C problem?)  USB=%s", usb ? "yes" : "no");
+    log_fault("BATT: no reading from the CH32 (I2C problem?)  USB=%s", usb ? "yes" : "no");
     return;
   }
   if (!raw || v < 2.5f) {

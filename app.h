@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 #pragma once
 /*
  * esp32-S3-ws4-caravan - shared declarations
@@ -21,25 +22,55 @@
 /* Configuration                                                      */
 /* ================================================================== */
 
+/* ================================================================== */
+/* Language (lang.cpp, lang/*.po)                                     */
+/* ================================================================== */
+/* All on-screen text is written in English in the code. tr() returns the
+   translation in the chosen language, or the text unchanged. The LVGL calls
+   that put text on screen are wrapped further down, so most strings need no
+   TR() of their own; snprintf() formats and button maps do. Text that is
+   translated later (tables of names) is marked N_() so tools/i18n.py finds it.
+   Translations live in lang/<code>.po (gettext, edit with Poedit) and are
+   compiled in: tools/i18n.py turns them into lang_tables.h. */
+#define LANG_CODE_LEN 8
+extern char ui_lang[LANG_CODE_LEN];  // "en", "sv", ...; changing it restarts
+extern bool ui_translated;           // false while the language is English
+void lang_begin();                   // after load_cfg(): loads the chosen language
+int lang_list(char *codes, int max, char *names, size_t names_len);  // English + built-in languages, names "\n"-separated
+const char *tr(const char *en);  // safe from any task
+#define TR(s) tr(s)
+#define N_(s) s  // marks text for translation without translating it here
+/* Most languages need letters (a-ring, umlauts, accents) the built-in Montserrat
+   fonts lack: when translated, each built-in font is swapped for one that adds
+   the Latin-1 letters (font_latin1.c) and falls back to the built-in one. */
+const lv_font_t *ui_font(const lv_font_t *builtin);
+#define FONT_UI ui_font(LV_FONT_DEFAULT)
+/* Gives a screen or layer the translated font; everything on it inherits it.
+   (lv_theme_default_init() keeps the old font when only the font changes.) */
+void ui_font_apply(lv_obj_t *scr);
+const char *tr_weekday(int wday);  // 0 = Sunday, as in struct tm
+const char *tr_month(int mon);     // 0 = January
+const char *tr_day_short(int i);   // 0 = Monday, two or three letters
+
 /* Fonts: fall back gracefully if the big fonts are not enabled in lv_conf.h */
 #if LV_FONT_MONTSERRAT_48
-#define FONT_CLOCK (&lv_font_montserrat_48)
+#define FONT_CLOCK ui_font(&lv_font_montserrat_48)
 #elif LV_FONT_MONTSERRAT_40
-#define FONT_CLOCK (&lv_font_montserrat_40)
+#define FONT_CLOCK ui_font(&lv_font_montserrat_40)
 #elif LV_FONT_MONTSERRAT_32
-#define FONT_CLOCK (&lv_font_montserrat_32)
+#define FONT_CLOCK ui_font(&lv_font_montserrat_32)
 #else
-#define FONT_CLOCK LV_FONT_DEFAULT
+#define FONT_CLOCK ui_font(LV_FONT_DEFAULT)
 #endif
 
 #if LV_FONT_MONTSERRAT_32
-#define FONT_BIG (&lv_font_montserrat_32)
+#define FONT_BIG ui_font(&lv_font_montserrat_32)
 #elif LV_FONT_MONTSERRAT_28
-#define FONT_BIG (&lv_font_montserrat_28)
+#define FONT_BIG ui_font(&lv_font_montserrat_28)
 #elif LV_FONT_MONTSERRAT_24
-#define FONT_BIG (&lv_font_montserrat_24)
+#define FONT_BIG ui_font(&lv_font_montserrat_24)
 #else
-#define FONT_BIG LV_FONT_DEFAULT
+#define FONT_BIG ui_font(LV_FONT_DEFAULT)
 #endif
 
 #ifndef LV_KEYBOARD_CTRL_BTN_FLAGS
@@ -52,14 +83,14 @@ LV_FONT_DECLARE(font_clock_96)
 #define FONT_SAVER (&font_clock_96)
 
 #define DEG "\xC2\xB0"  // degree sign (UTF-8)
-#define NO_NET_TEXT "Press Scan"
-#define NO_NET_FOUND "No networks found"
+#define NO_NET_TEXT N_("Press Scan")
+#define NO_NET_FOUND N_("No networks found")
 #define KB_H 220  // on-screen keyboard height
 
 /* Firmware version. Bump the minor number when something user-visible changes,
    the major when the settings format does. Shown in Settings -> About, on the
    web page and in the first log line. */
-#define FW_VERSION "1.0.1 Stable"
+#define FW_VERSION "1.0"
 
 #define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
 /* Battery (BMS) support. Set to 1 to bring the tab and the ECO-WORTHY/JBD
@@ -69,7 +100,7 @@ LV_FONT_DECLARE(font_clock_96)
 
 /* 1 = log every BLE frame and other chatty diagnostics. Off in normal use:
    the prints cost time inside the Bluetooth task. */
-#define DEBUG_LOG 0
+#define DEBUG_LOG 0  // (they also need the serial monitor on to reach USB serial)
 #define dlogf(...) \
   do { \
     if (DEBUG_LOG) logf(__VA_ARGS__); \
@@ -128,6 +159,8 @@ struct Shared {
   char web_name[24] = "Waveshare";  // title of the web page
   // results for the UI
   char wifi_status[96] = "Not connected";
+  bool wifi_up = false;    // connected to the access point
+  int wifi_rssi = 0;       // signal strength in dBm while connected
   bool status_changed = true;
   char scan_list[1024] = "";
   int scan_sel = 0;
@@ -246,6 +279,26 @@ struct HistBucket {
   float soc;  // state of charge at the end of the period, NAN if unknown
 };
 
+/* The starting screen, saved to flash as one block */
+struct SplashCfg {
+  char text[20];
+  uint8_t size;     // 20, 28, 32 or 48: the built-in Montserrat sizes
+  uint8_t r, g, b;  // colour of the text
+  uint8_t seconds;  // how long it stays, 0 = skip it
+};
+
+/* Ruuvi tab history: daily low and high per added tag (ruuvi_hist.cpp) */
+#define RUUVI_DAYS 7
+#define RUUVI_NONE INT16_MIN  // no reading that day
+struct RuuviDay {
+  int16_t lo, hi;  // tenths of a degree C
+};
+struct RuuviHist {
+  char mac[18];   // the tag these days belong to
+  int32_t day;    // local day number (days since 1970) of d[RUUVI_DAYS - 1]
+  RuuviDay d[RUUVI_DAYS];  // oldest first
+};
+
 /* One timed schedule per output: relays first, then Shelly devices */
 #define SCHED_COUNT (MAX_RELAYS + MAX_SHELLY)
 
@@ -253,7 +306,7 @@ struct Schedule {
   bool enabled;
   uint16_t on_min;   // minutes since midnight
   uint16_t off_min;  // may be before on_min: the window then crosses midnight
-  uint8_t days;      // bit 0 = Sunday ... bit 6 = Saturday
+  uint8_t days;      // bit 0 = Monday ... bit 6 = Sunday
 };
 
 /* Relays on an external PCF8574, saved to flash as one block */
@@ -314,6 +367,7 @@ extern VicCfg vic_cfg[MAX_VIC];
 extern VicData vic_data[MAX_VIC];
 extern VicSeen vic_seen[MAX_VIC_SEEN];
 
+extern SplashCfg splash_cfg;
 extern AlarmCfg alarm_cfg;
 extern BmsCfg bms_cfg;
 extern ShellyCfg shelly_cfg[MAX_SHELLY];
@@ -323,7 +377,11 @@ extern bool pcf_ok;
 
 /* Requests from the UI to the network task (which also does all flash writes) */
 extern volatile bool cmd_scan, cmd_connect, cmd_geocode, cmd_weather;
-extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly, cmd_save_alarm, cmd_save_sched;
+extern volatile bool cmd_save_rhist;  // Ruuvi history changed: save it
+extern RuuviHist ruuvi_hist[MAX_RUUVI];
+extern volatile bool cmd_save_lang;  // a new language was chosen: save lang_pending (the UI then restarts)
+extern char lang_pending[LANG_CODE_LEN];
+extern volatile bool cmd_save_ruuvi, cmd_save_vic, cmd_save_scan, cmd_save_bl, cmd_save_relay, cmd_save_bms, cmd_save_web, cmd_save_feat, cmd_save_shelly, cmd_save_alarm, cmd_save_sched, cmd_save_splash;
 extern volatile bool scan_restart;
 
 /* Features that can be switched off in Settings (services stop too) */
@@ -336,6 +394,7 @@ extern volatile bool feat_remote;  // web page may switch relays and Shelly (def
 extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
 extern volatile bool feat_powersave;  // slow the CPU while the screen sleeps
 extern volatile bool feat_perflog;
+extern volatile bool feat_serial;  // serial monitor: everything to USB serial (default off: faults only)
 extern volatile bool feat_battmode;        // run on the LiPo when external power goes
 extern volatile uint8_t batt_shutdown_pct;  // shut down at this charge
 extern volatile bool feat_csv;     // write measurements to /data.csv (default off)
@@ -403,7 +462,11 @@ const char *bms_protection_text(uint16_t bits);  // NULL = no protection active
 /* sdlog.cpp (log to Serial, to a ring buffer readable at /log, and to the TF card) */
 void log_begin();
 void log_boot_banner();  // version, build date and the environment check
-void logf(const char *fmt, ...);
+void logf(const char *fmt, ...);       // the log; to USB serial only with the serial monitor on
+void log_fault(const char *fmt, ...);  // an error or warning: to USB serial always
+void serial_apply();                   // after feat_serial changed: sets the ESP-IDF log level
+void serf(const char *fmt, ...);       // USB serial only, and only with the serial monitor on
+void serln(const char *s = "");
 void log_dump(String &out);
 bool sd_log_mount();
 bool sd_log_probe();  // works out which CH32 bit releases the card
@@ -493,6 +556,10 @@ int i2c_scan(char *out, size_t len);  // returns number of devices found
 /* ================================================================== */
 /* ui_common.cpp */
 extern lv_obj_t *tab_home, *tab_power, *tab_battery, *tab_relays, *tab_shelly, *tab_temp, *tab_weather, *tab_settings, *kb;
+const lv_font_t *splash_font(uint8_t size);
+void splash_show();    // the starting screen, called as soon as the settings are loaded
+void settings_splash(lv_obj_t *parent);  // ui_settings.cpp
+void splash_finish();  // waits until 5 s after power-on, then removes it
 void build_ui();
 void ui_update_tabs();  // hides the tabs of switched-off features
 void kb_show(lv_obj_t *ta);
@@ -536,7 +603,11 @@ void shelly_timer_cb(lv_timer_t *t);
 void settings_shelly(lv_obj_t *parent);
 void shelly_settings_refresh(const BmsSeen *seen, int n, uint32_t now);
 
-/* ui_temp.cpp */
+/* ruuvi_hist.cpp */
+void ruuvi_hist_note(int slot, const char *mac, float temp);     // a reading from an added tag
+bool ruuvi_hist_get(int slot, const char *mac, RuuviHist *out);  // false: nothing for this tag yet
+
+/* ui_temp.cpp (the Ruuvi tab) */
 void build_temp_tab();
 void ruuvi_timer_cb(lv_timer_t *t);
 
@@ -559,3 +630,16 @@ void victron_settings_refresh(const VicCfg *cfg, const VicData *dat, const VicSe
 /* ui_saver.cpp */
 void build_saver();
 void saver_timer_cb(lv_timer_t *t);
+
+/* ================================================================== */
+/* Translation of text given to LVGL                                  */
+/* ================================================================== */
+/* These wrap LVGL's own functions (the name in brackets is not expanded again)
+   so that every label, placeholder, tab name and option list is translated. */
+#define lv_label_set_text(obj, txt) (lv_label_set_text)(obj, tr(txt))
+#define lv_label_set_text_fmt(obj, fmt, ...) (lv_label_set_text_fmt)(obj, tr(fmt), ##__VA_ARGS__)
+#define lv_textarea_set_placeholder_text(obj, txt) (lv_textarea_set_placeholder_text)(obj, tr(txt))
+#define lv_dropdown_set_options(obj, opts) (lv_dropdown_set_options)(obj, tr(opts))
+#define lv_dropdown_set_options_static(obj, opts) (lv_dropdown_set_options_static)(obj, tr(opts))
+#define lv_tabview_add_tab(tv, name) (lv_tabview_add_tab)(tv, tr(name))
+

@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* font_clock_96: DejaVu Sans 96 px, 4 bpp, characters '-' '0'-'9' ':'
  * Generated for the esp32-S3-ws4-caravan screen saver clock (LVGL 8 font format). */
 #include <lvgl.h>

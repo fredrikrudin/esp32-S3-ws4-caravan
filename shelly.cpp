@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Shelly devices over Bluetooth (BLE RPC) - framework, off by default.
  *
  * Shelly Gen2/Gen3 devices expose a JSON-RPC channel over GATT:
@@ -51,7 +52,7 @@ static void sh_status(int i, const char *fmt, ...) {
   xSemaphoreTake(sh_mtx, portMAX_DELAY);
   strlcpy(sh_data[i].status, buf, sizeof(sh_data[i].status));
   xSemaphoreGive(sh_mtx);
-  USBSerial.printf("Shelly %d: %s\n", i + 1, buf);
+  serf("Shelly %d: %s\n", i + 1, buf);
 }
 
 /* True when Shelly is on and at least one device has been added */
@@ -206,7 +207,7 @@ static bool shelly_connect(const ShellyCfg &c) {
 static bool apply_status(int i, const String &answer) {
   JsonDocument doc;
   if (deserializeJson(doc, answer)) {
-    sh_status(i, "Bad answer");
+    sh_status(i, TR("Bad answer"));
     return false;
   }
   JsonObject r = doc["result"].isNull() ? doc.as<JsonObject>() : doc["result"].as<JsonObject>();
@@ -234,9 +235,9 @@ static void note_failure(int i, const char *why) {
   uint8_t n = sh_data[i].fails;
   if (n >= 3) sh_data[i].valid = false;  // stop showing values we can no longer trust
   sh_data[i].connected = false;
-  snprintf(sh_data[i].status, sizeof(sh_data[i].status), n > 1 ? "%s (%u tries)" : "%s", why, n);
+  snprintf(sh_data[i].status, sizeof(sh_data[i].status), n > 1 ? TR("%s (%u tries)") : "%s", why, n);
   xSemaphoreGive(sh_mtx);
-  logf("Shelly %d: %s", i + 1, why);
+  log_fault("Shelly %d: %s", i + 1, why);
 }
 
 /* Reads on/off and power; optionally switches first */
@@ -247,12 +248,12 @@ static bool shelly_poll(int i, bool do_set, bool on) {
   UNLOCK();
   if (!c.used) return false;
 
-  sh_status(i, do_set ? "Switching..." : "Reading...");
+  sh_status(i, do_set ? TR("Switching...") : TR("Reading..."));
 
   /* ---------------- WiFi ---------------- */
   if (c.transport == SHELLY_WIFI) {
     if (WiFi.status() != WL_CONNECTED) {
-      note_failure(i, "No WiFi");
+      note_failure(i, TR("No WiFi"));
       return false;
     }
     String answer;
@@ -260,17 +261,17 @@ static bool shelly_poll(int i, bool do_set, bool on) {
       char path[64];
       snprintf(path, sizeof(path), "/rpc/Switch.Set?id=0&on=%s", on ? "true" : "false");
       if (!http_rpc(c, path, answer)) {
-        note_failure(i, "Switching failed");
+        note_failure(i, TR("Switching failed"));
         return false;
       }
       vTaskDelay(pdMS_TO_TICKS(200));
     }
     if (!http_rpc(c, "/rpc/Switch.GetStatus?id=0", answer)) {
-      note_failure(i, "No answer over WiFi");
+      note_failure(i, TR("No answer over WiFi"));
       return false;
     }
     if (!apply_status(i, answer)) return false;
-    sh_status(i, "OK over WiFi");
+    sh_status(i, TR("OK over WiFi"));
     return true;
   }
 
@@ -278,7 +279,7 @@ static bool shelly_poll(int i, bool do_set, bool on) {
   xSemaphoreTake(ble_conn_mtx, portMAX_DELAY);  // never connect while another task is connecting
   if (!shelly_connect(c)) {
     xSemaphoreGive(ble_conn_mtx);
-    note_failure(i, "No Bluetooth connection");
+    note_failure(i, TR("No Bluetooth connection"));
     return false;
   }
 
@@ -288,15 +289,15 @@ static bool shelly_poll(int i, bool do_set, bool on) {
     char req[96];
     snprintf(req, sizeof(req), "{\"id\":1,\"method\":\"Switch.Set\",\"params\":{\"id\":0,\"on\":%s}}", on ? "true" : "false");
     ok = rpc_call(req, answer);
-    if (!ok) note_failure(i, "Switching failed");
+    if (!ok) note_failure(i, TR("Switching failed"));
     vTaskDelay(pdMS_TO_TICKS(200));
   }
   if (ok) {
     ok = rpc_call("{\"id\":2,\"method\":\"Switch.GetStatus\",\"params\":{\"id\":0}}", answer);
-    if (!ok) note_failure(i, "No answer over Bluetooth");
+    if (!ok) note_failure(i, TR("No answer over Bluetooth"));
   }
   if (ok) ok = apply_status(i, answer);
-  if (ok) sh_status(i, "OK over Bluetooth");
+  if (ok) sh_status(i, TR("OK over Bluetooth"));
 
   cl->disconnect();
   vTaskDelay(pdMS_TO_TICKS(100));
@@ -357,7 +358,7 @@ static void shelly_task(void *arg) {
 void shelly_start() {
   sh_mtx = xSemaphoreCreateMutex();
   memset(sh_data, 0, sizeof(sh_data));
-  for (int i = 0; i < MAX_SHELLY; i++) strlcpy(sh_data[i].status, "Not read yet", sizeof(sh_data[i].status));
+  for (int i = 0; i < MAX_SHELLY; i++) strlcpy(sh_data[i].status, TR("Not read yet"), sizeof(sh_data[i].status));
   /* Shelly requires bonding for RPC; "just works" pairing, no PIN */
   NimBLEDevice::setSecurityAuth(true, false, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);

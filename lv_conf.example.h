@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /**
  * lv_conf.h for LVGL 8.3/8.4 - shared by every Arduino sketch on this machine.
  *

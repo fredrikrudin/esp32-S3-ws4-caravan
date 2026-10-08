@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Home tab: the start page, in the style of the Victron GX Boat Page.
    Straight gradient gauges along the left and right edges (battery and solar),
    the clock as the central figure, values beside each gauge, and a
@@ -21,8 +22,52 @@ static lv_obj_t *home_clock, *home_date, *lbl_charging;
 static lv_obj_t *lbl_inside, *lbl_outside, *lbl_relays;
 static lv_obj_t *spark_batt, *spark_solar;
 static lv_obj_t *banner, *banner_lbl;
+static lv_obj_t *wifi_icon, *wifi_bar[4];
 
 static float solar_scale = 400;  // gauge top of scale, grows with the highest reading seen
+
+/* WiFi indicator, top right: the WiFi symbol and four signal bars.
+   Grey with no bars lit when not connected. */
+static void make_wifi_indicator(lv_obj_t *parent) {
+  lv_obj_t *box = lv_obj_create(parent);
+  lv_obj_remove_style_all(box);
+  lv_obj_set_size(box, 52, 20);
+  lv_obj_align(box, LV_ALIGN_TOP_RIGHT, -40, 46);
+  lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+
+  wifi_icon = lv_label_create(box);
+  lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
+  lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0x5A5A5A), 0);
+  lv_obj_align(wifi_icon, LV_ALIGN_LEFT_MID, 0, 0);
+
+  for (int i = 0; i < 4; i++) {
+    lv_obj_t *b = lv_obj_create(box);
+    lv_obj_remove_style_all(b);
+    int h = 5 + i * 4;                       // 5, 9, 13, 17 px
+    lv_obj_set_size(b, 4, h);
+    lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, 28 + i * 6, -1);
+    lv_obj_set_style_radius(b, 1, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(0x3A3A3A), 0);
+    wifi_bar[i] = b;
+  }
+}
+
+static void update_wifi_indicator() {
+  LOCK();
+  bool up = g.wifi_up;
+  int rssi = g.wifi_rssi;
+  UNLOCK();
+  int lit = !up ? 0 : rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+  uint32_t col = lit >= 3 ? 0x2ECC71 : lit == 2 ? 0xF1C40F : 0xE74C3C;   // green, yellow, red
+  static int last_lit = -1;
+  if (lit == last_lit) return;
+  last_lit = lit;
+  lv_obj_set_style_text_color(wifi_icon, lv_color_hex(up ? 0xFFFFFF : 0x5A5A5A), 0);
+  for (int i = 0; i < 4; i++)
+    lv_obj_set_style_bg_color(wifi_bar[i], lv_color_hex(i < lit ? col : 0x3A3A3A), 0);
+}
 
 /* A straight gauge along one screen edge: fills from the bottom (0 %) upwards,
    with a gradient from a deep shade at the bottom to a bright one at the top */
@@ -78,24 +123,26 @@ void build_home_tab() {
   lv_obj_set_style_text_align(banner_lbl, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_center(banner_lbl);
 
+  make_wifi_indicator(tab_home);
+
   /* centre: charging indicator, clock, date */
-  lbl_charging = make_value(tab_home, LV_ALIGN_TOP_MID, 0, 44, LV_FONT_DEFAULT, 0x2ECC71);
+  lbl_charging = make_value(tab_home, LV_ALIGN_TOP_MID, 0, 44, FONT_UI, 0x2ECC71);
   home_clock = lv_label_create(tab_home);
   lv_obj_set_style_text_font(home_clock, FONT_SAVER, 0);
   lv_label_set_text(home_clock, "--:--");
   lv_obj_align(home_clock, LV_ALIGN_TOP_MID, 0, 68);
-  home_date = make_value(tab_home, LV_ALIGN_TOP_MID, 0, 190, LV_FONT_DEFAULT, 0x9E9E9E);
+  home_date = make_value(tab_home, LV_ALIGN_TOP_MID, 0, 190, FONT_UI, 0x9E9E9E);
 
   /* left: battery */
   lbl_soc = make_value(tab_home, LV_ALIGN_TOP_LEFT, 40, 232, FONT_BIG, 0xFFFFFF);
-  lbl_batt_sub = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 274, LV_FONT_DEFAULT, 0xC8C8C8);
-  lbl_ttg_cap = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 300, LV_FONT_DEFAULT, 0x9E9E9E);
-  lbl_ttg = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 320, LV_FONT_DEFAULT, 0xFFFFFF);
+  lbl_batt_sub = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 274, FONT_UI, 0xC8C8C8);
+  lbl_ttg_cap = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 300, FONT_UI, 0x9E9E9E);
+  lbl_ttg = make_value(tab_home, LV_ALIGN_TOP_LEFT, 42, 320, FONT_UI, 0xFFFFFF);
 
   /* right: solar */
   lbl_solar = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -40, 232, FONT_BIG, 0xFFFFFF);
-  lbl_solar_cap = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 274, LV_FONT_DEFAULT, 0x9E9E9E);
-  lbl_solar_sub = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 300, LV_FONT_DEFAULT, 0xC8C8C8);
+  lbl_solar_cap = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 274, FONT_UI, 0x9E9E9E);
+  lbl_solar_sub = make_value(tab_home, LV_ALIGN_TOP_RIGHT, -42, 300, FONT_UI, 0xC8C8C8);
 
   /* the last ten minutes, under each column */
   spark_batt = make_sparkline(tab_home, COL_BATT_A, 150, 36, HIST_RECENT);
@@ -131,6 +178,7 @@ void home_timer_cb(lv_timer_t *t) {
   format_local_time(tb, db);
   set_label(home_clock, tb);
   set_label(home_date, db);
+  update_wifi_indicator();
 
   /* ---- banner ---- */
   char msg[48];
@@ -226,7 +274,7 @@ void home_timer_cb(lv_timer_t *t) {
     snprintf(b, sizeof(b), "%.0f W", pv_sum);
     set_label(lbl_solar, b);
     set_label(lbl_solar_cap, "Solar");
-    snprintf(b, sizeof(b), "Today %.2f kWh", yield_sum);
+    snprintf(b, sizeof(b), TR("Today %.2f kWh"), yield_sum);
     set_label(lbl_solar_sub, b);
     lv_bar_set_value(bar_solar, (int)(pv_sum / solar_scale * 1000), LV_ANIM_OFF);
   } else {

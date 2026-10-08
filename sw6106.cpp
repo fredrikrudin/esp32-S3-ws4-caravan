@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* SW6106 power bank controller (I2C address 0x3C), where fitted.
  *
  * The chip switches its output off when it sees a light load, which is what a
@@ -55,7 +56,7 @@ void sw6106_service() {
     static uint8_t fails = 0;
     if (++fails >= 5) {  // the chip has gone: stop trying and say so once
       present = false;
-      logf("SW6106: stopped answering, keep-alive abandoned");
+      log_fault("SW6106: stopped answering, keep-alive abandoned");
     }
   }
 }

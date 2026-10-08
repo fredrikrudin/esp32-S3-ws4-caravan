@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Settings: Victron devices (add, name, encryption key, delete) */
 #include "app.h"
 
@@ -20,7 +21,7 @@ static void vic_open_editor(const char *mac, uint8_t type, int slot) {
   vic_edit_idx = slot;
   vic_edit_type = type;
   strlcpy(vic_edit_mac, mac, sizeof(vic_edit_mac));
-  lv_label_set_text_fmt(lbl_vic_edit_title, "%s  %s", vic_type_name(type), mac);
+  lv_label_set_text_fmt(lbl_vic_edit_title, "%s  %s", TR(vic_type_name(type)), mac);
 
   char name[24], keyhex[33] = "";
   if (slot >= 0) {
@@ -214,8 +215,8 @@ void victron_settings_refresh(const VicCfg *cfg, const VicData *dat, const VicSe
   for (int i = 0; i < MAX_VIC; i++) {
     if (!cfg[i].used || !vic_list_lbl[i]) continue;
     const char *st = vic_status(dat[i], cfg[i].type, now);
-    if (!strcmp(st, "OK")) snprintf(b, sizeof(b), "%s\n%s  -  OK (%d dBm)", cfg[i].name, vic_type_name(cfg[i].type), dat[i].rssi);
-    else snprintf(b, sizeof(b), "%s\n%s  -  %s", cfg[i].name, vic_type_name(cfg[i].type), st);
+    if (!strcmp(st, "OK")) snprintf(b, sizeof(b), TR("%s\n%s  -  OK (%d dBm)"), cfg[i].name, TR(vic_type_name(cfg[i].type)), dat[i].rssi);
+    else snprintf(b, sizeof(b), "%s\n%s  -  %s", cfg[i].name, TR(vic_type_name(cfg[i].type)), TR(st));
     set_label(vic_list_lbl[i], b);
   }
 
@@ -236,7 +237,7 @@ void victron_settings_refresh(const VicCfg *cfg, const VicData *dat, const VicSe
     if (added) continue;
     char s[8], line[40];
     mac_short(seen[i].mac, s);
-    snprintf(line, sizeof(line), "%s%s  %s", count ? "\n" : "", vic_type_name(seen[i].type), s);
+    snprintf(line, sizeof(line), "%s%s  %s", count ? "\n" : "", TR(vic_type_name(seen[i].type)), s);
     strlcat(opts, line, sizeof(opts));
     strlcpy(vic_dd_mac[count], seen[i].mac, sizeof(vic_dd_mac[count]));
     vic_dd_type[count] = seen[i].type;
@@ -244,7 +245,7 @@ void victron_settings_refresh(const VicCfg *cfg, const VicData *dat, const VicSe
     count++;
   }
   vic_dd_count = count;
-  if (!count) strcpy(opts, "Searching...");
+  if (!count) strcpy(opts, TR("Searching..."));
   if (strcmp(opts, last_opts)) {
     strlcpy(last_opts, opts, sizeof(last_opts));
     lv_dropdown_set_options(dd_vic, opts);

@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Energy history for the Power page.
  * Samples solar power and estimated consumption every 10 s, adds them up into
  * watt-hours, and keeps 24 hourly buckets and 7 daily ones - like the bar

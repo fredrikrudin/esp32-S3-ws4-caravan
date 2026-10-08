@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Two extras that use the TF card:
  *  - measurements as CSV (/data.csv), one line per interval, for graphing later
  *  - settings backup and restore (/settings.json), so a flash erase isn't fatal
@@ -8,7 +9,7 @@
 #define CSV_NAME "/data.csv"
 #define CSV_HEADER "time,uptime_s,soc,batt_v,batt_a,batt_w,solar_w,yield_kwh,temp1,temp2,temp3,outside,relays_on,shelly_w\n"
 
-static char csv_msg[64] = "Not started";
+static char csv_msg[64] = N_("Not started");
 
 const char *csv_status() {
   return csv_msg;
@@ -17,7 +18,7 @@ const char *csv_status() {
 /* One line of measurements; called from loop() via csv_service() */
 static void csv_write_line() {
   if (!sd_log_ok()) {
-    strlcpy(csv_msg, "No card mounted", sizeof(csv_msg));
+    strlcpy(csv_msg, TR("No card mounted"), sizeof(csv_msg));
     return;
   }
   uint32_t now = millis();
@@ -104,7 +105,7 @@ static void csv_write_line() {
   bool need_header = !sd_fs().exists(CSV_NAME);
   File f = sd_fs().open(CSV_NAME, FILE_APPEND);
   if (!f) {
-    strlcpy(csv_msg, "Cannot write data.csv", sizeof(csv_msg));
+    strlcpy(csv_msg, TR("Cannot write data.csv"), sizeof(csv_msg));
     return;
   }
   if (need_header) f.print(CSV_HEADER);
@@ -131,7 +132,7 @@ static void csv_write_line() {
   f.println(line);
   f.close();
 
-  snprintf(csv_msg, sizeof(csv_msg), "Last entry %s", ts[0] ? ts : "(no time yet)");
+  snprintf(csv_msg, sizeof(csv_msg), TR("Last entry %s"), ts[0] ? ts : TR("(no time yet)"));
 }
 
 /* Called from loop(): writes a line every csv_interval_min minutes */
@@ -202,6 +203,7 @@ bool settings_backup() {
   doc["blsaver"] = bl_saver;
   doc["feat"] = (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0);
   doc["csvmin"] = csv_interval_min;
+  doc["lang"] = ui_lang;
 
   File f = sd_fs().open("/settings.json", FILE_WRITE);
   if (!f) return false;
@@ -220,7 +222,7 @@ bool settings_restore() {
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) {
-    logf("Restore failed: %s", err.c_str());
+    log_fault("Restore failed: %s", err.c_str());
     return false;
   }
 
@@ -239,6 +241,7 @@ bool settings_restore() {
   prefs.putUChar("blsaver", doc["blsaver"] | 10);
   prefs.putUChar("feat", doc["feat"] | 0x03);
   prefs.putUChar("csvmin", doc["csvmin"] | 5);
+  prefs.putString("lang", (const char *)(doc["lang"] | "en"));
 
   BmsCfg b = {};
   strlcpy(b.mac, doc["bmsmac"] | "", sizeof(b.mac));

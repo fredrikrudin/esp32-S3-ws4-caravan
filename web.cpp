@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Minimal web server (port 80), read-only.
  *   /        HTML page: battery SOC, Victron devices (what is connected and charging), relays.
  *            Refreshes itself every 5 seconds.
@@ -566,8 +567,20 @@ static void handle_root() {
       char st[64];
       schedule_status(i, st, sizeof(st));
       bool on = schedule_target_on(i);
-      add(s, "<div class='row'><span>%s<br><span class='sub'>%s</span></span><span style='text-align:right'>",
-          esc_html(schedule_target_name(i)).c_str(), st);
+
+      char days[32] = "";
+      const char *dn[] = { "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" };
+      if (sched[i].days == 0x7F) {
+        strlcpy(days, "every day", sizeof(days));
+      } else {
+        for (int d = 0; d < 7; d++) {
+          if (!(sched[i].days & (1 << d))) continue;
+          if (days[0]) strlcat(days, " ", sizeof(days));
+          strlcat(days, dn[d], sizeof(days));
+        }
+      }
+      add(s, "<div class='row'><span>%s<br><span class='sub'>%s &middot; %s</span></span><span style='text-align:right'>",
+          esc_html(schedule_target_name(i)).c_str(), st, days);
       if (feat_remote) {
         add(s, "<form class='sw' method='post' action='/switch'><input type='hidden' name='sched' value='%d'>"
                "<div class='seg'><button name='on' value='0' class='%s'>Off</button>"

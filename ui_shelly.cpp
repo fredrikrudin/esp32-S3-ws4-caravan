@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Shelly tab: on/off and power for each paired Shelly device,
    plus the "Shelly (Bluetooth)" section in Settings, where devices are paired. */
 #include "app.h"
@@ -85,7 +86,7 @@ void shelly_timer_cb(lv_timer_t *t) {
     set_label(c.power, b);
 
     if (d.valid && !isnan(d.voltage)) snprintf(b, sizeof(b), "%s  -  %.0f V  %.2f A", d.status, d.voltage, d.current);
-    else if (d.fails) snprintf(b, sizeof(b), LV_SYMBOL_WARNING " %s  -  tap to retry", d.status);
+    else if (d.fails) snprintf(b, sizeof(b), TR(LV_SYMBOL_WARNING " %s  -  tap to retry"), d.status);
     else snprintf(b, sizeof(b), "%s", d.status);
     set_label(c.sub, b);
 
@@ -128,7 +129,7 @@ static void shelly_list_rebuild() {
     lv_obj_set_flex_grow(l, 1);
     lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
     lv_label_set_text_fmt(l, "%s  (%s)", shelly_cfg[i].name,
-                          shelly_cfg[i].transport == SHELLY_WIFI ? shelly_cfg[i].host : "Bluetooth");
+                          shelly_cfg[i].transport == SHELLY_WIFI ? shelly_cfg[i].host : TR("Bluetooth"));
     shelly_list_lbl[i] = l;
     lv_obj_t *del = lv_btn_create(row);
     lv_obj_set_style_bg_color(del, lv_palette_main(LV_PALETTE_RED), 0);
@@ -213,7 +214,7 @@ void settings_shelly(lv_obj_t *page) {
   lv_label_set_text(hint, "Pair plugs and switches over Bluetooth. Enable Bluetooth on the Shelly first; the board bonds with it on the first connection.");
 
   /* how to talk to the device */
-  static const char *tr_map[] = { "Bluetooth", "WiFi", "" };
+  static const char *tr_map[] = { TR("Bluetooth"), TR("WiFi"), "" };
   seg_transport = lv_btnmatrix_create(parent);
   lv_btnmatrix_set_map(seg_transport, tr_map);
   lv_obj_set_size(seg_transport, LV_PCT(100), 46);
@@ -291,7 +292,7 @@ void shelly_settings_refresh(const BmsSeen *seen, int n, uint32_t now) {
     count++;
   }
   sh_dd_count = count;
-  if (!count) strcpy(opts, "Searching...");
+  if (!count) strcpy(opts, TR("Searching..."));
   if (strcmp(opts, last_opts)) {
     strlcpy(last_opts, opts, sizeof(last_opts));
     lv_dropdown_set_options(dd_shelly, opts);

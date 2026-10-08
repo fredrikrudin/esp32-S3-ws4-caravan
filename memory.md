@@ -1,3 +1,4 @@
+<!-- esp32-S3-ws4-caravan v1.0 -->
 # Memory and latency optimisation
 
 Notes on how to lower internal RAM use and improve touch response and smoothness.

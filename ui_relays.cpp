@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Relays tab (PCF8574) + Settings sections for the relay board and I2C scan.
    Each relay is an Off | On segmented control, like the Victron switch pane:
    you press the side you want, so a stray touch can't toggle anything. */
@@ -79,8 +80,8 @@ static void relays_enable_cb(lv_event_t *e) {
 }
 
 /* ---------- Settings: relay board ---------- */
-static const char *PCF_ADDR_OPTS =
-  "Not used\n0x20\n0x21\n0x22\n0x23\n0x24\n0x25\n0x26\n0x27\n"
+static const char *PCF_ADDR_LIST =
+  "\n0x20\n0x21\n0x22\n0x23\n0x24\n0x25\n0x26\n0x27\n"
   "0x38\n0x39\n0x3A\n0x3B\n0x3C\n0x3D\n0x3E\n0x3F";
 
 static uint8_t pcf_index_to_addr(uint16_t i) {
@@ -133,7 +134,7 @@ static void relay_rename_now() {
   const char *n = lv_textarea_get_text(ta_relay_name);
   LOCK();
   if (n[0]) strlcpy(relay_cfg.names[i], n, sizeof(relay_cfg.names[i]));
-  else snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), "Relay %d", i + 1);
+  else snprintf(relay_cfg.names[i], sizeof(relay_cfg.names[i]), TR("Relay %d"), i + 1);
   UNLOCK();
   kb_hide();
   relay_cfg_changed();
@@ -151,7 +152,9 @@ void settings_relays(lv_obj_t *page) {
   lv_label_set_text(lv_label_create(row), "I2C address");
   dd_pcf_addr = lv_dropdown_create(row);
   lv_obj_set_flex_grow(dd_pcf_addr, 1);
-  lv_dropdown_set_options_static(dd_pcf_addr, PCF_ADDR_OPTS);
+  static char pcf_opts[120];  // "Not used" (translated), then the addresses
+  snprintf(pcf_opts, sizeof(pcf_opts), "%s%s", TR("Not used"), PCF_ADDR_LIST);
+  (lv_dropdown_set_options_static)(dd_pcf_addr, pcf_opts);
   lv_dropdown_set_selected(dd_pcf_addr, pcf_addr_to_index(relay_cfg.addr));
   lv_obj_add_event_cb(dd_pcf_addr, pcf_addr_cb, LV_EVENT_VALUE_CHANGED, NULL);
 

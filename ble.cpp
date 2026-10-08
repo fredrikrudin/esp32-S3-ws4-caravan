@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* BLE scanning (NimBLE-Arduino 2.x). Every advertisement is offered to the
    RuuviTag and Victron decoders (which ignore data that isn't theirs), and
    named devices are listed for the Battery tab. */
@@ -16,17 +17,17 @@ static void log_battery_adv(const NimBLEAdvertisedDevice *dev, const std::string
   dlogf("BMS adv %s '%s' rssi %d", addr.c_str(), dev->getName().c_str(), dev->getRSSI());
   for (uint8_t i = 0; i < dev->getManufacturerDataCount(); i++) {
     std::string md = dev->getManufacturerData(i);
-    USBSerial.print("  manufacturer data:");
-    for (unsigned char c : md) USBSerial.printf(" %02X", c);
-    USBSerial.println();
+    serf("  manufacturer data:");
+    for (unsigned char c : md) serf(" %02X", c);
+    serln();
   }
   for (uint8_t i = 0; i < dev->getServiceUUIDCount(); i++)
-    USBSerial.printf("  service uuid: %s\n", dev->getServiceUUID(i).toString().c_str());
+    serf("  service uuid: %s\n", dev->getServiceUUID(i).toString().c_str());
   for (uint8_t i = 0; i < dev->getServiceDataCount(); i++) {
     std::string sd = dev->getServiceData(i);
-    USBSerial.printf("  service data %s:", dev->getServiceDataUUID(i).toString().c_str());
-    for (unsigned char c : sd) USBSerial.printf(" %02X", c);
-    USBSerial.println();
+    serf("  service data %s:", dev->getServiceDataUUID(i).toString().c_str());
+    for (unsigned char c : sd) serf(" %02X", c);
+    serln();
   }
 }
 

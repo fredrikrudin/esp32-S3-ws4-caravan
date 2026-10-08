@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Logging to the Serial Monitor, to a ring buffer in PSRAM (readable at /log in
    the browser) and, if switched on, to the TF card.
    The card uses SDMMC in 1-bit mode: GPIO2 clock, GPIO1 command, GPIO4 data,
@@ -29,7 +30,7 @@ static bool ring_wrapped = false;
 
 static bool sd_mounted = false;
 static bool sd_spi = false;  // true = mounted over SPI, false = SD (SDMMC) mode
-static char sd_msg[64] = "Not started";
+static char sd_msg[64] = N_("Not started");
 static File log_file;
 static char log_name[32] = "/caravan.log";
 static uint32_t last_flush = 0;
@@ -175,10 +176,10 @@ bool sd_log_probe() {
     uint64_t mb = (sd_spi ? SD.cardSize() : SD_MMC.cardSize()) / (1024 * 1024);
     log_file = sd_fs().open(log_name, FILE_APPEND);
     sd_mounted = (bool)log_file;
-    snprintf(sd_msg, sizeof(sd_msg), sd_mounted ? "Logging to %s (card %llu MB)" : "Card found but cannot write",
+    snprintf(sd_msg, sizeof(sd_msg), sd_mounted ? TR("Logging to %s (card %llu MB)") : TR("Card found but cannot write"),
              log_name, (unsigned long long)mb);
   } else {
-    strlcpy(sd_msg, "No card found (see the log)", sizeof(sd_msg));
+    strlcpy(sd_msg, TR("No card found (see the log)"), sizeof(sd_msg));
   }
   return found;
 }
@@ -214,8 +215,8 @@ bool sd_log_mount() {
   }
 
   if (!ok) {
-    strlcpy(sd_msg, "No card found (retrying every minute)", sizeof(sd_msg));
-    logf("SD: no card found - retrying every minute; use Probe card in Settings if it stays away");
+    strlcpy(sd_msg, TR("No card found (retrying every minute)"), sizeof(sd_msg));
+    log_fault("SD: no card found - retrying every minute; use Probe card in Settings if it stays away");
     return false;
   }
 
@@ -224,13 +225,13 @@ bool sd_log_mount() {
   if (!log_file) {
     if (sd_spi) SD.end();
     else SD_MMC.end();
-    strlcpy(sd_msg, "Card found, but cannot write", sizeof(sd_msg));
-    logf("SD: card found (%llu MB) but the file could not be opened - FAT32?", (unsigned long long)mb);
+    strlcpy(sd_msg, TR("Card found, but cannot write"), sizeof(sd_msg));
+    log_fault("SD: card found (%llu MB) but the file could not be opened - FAT32?", (unsigned long long)mb);
     return false;
   }
   sd_mounted = true;
-  snprintf(sd_msg, sizeof(sd_msg), "Logging to %s (card %llu MB, %s)", log_name, (unsigned long long)mb,
-           sd_spi ? "SPI" : "SD mode");
+  snprintf(sd_msg, sizeof(sd_msg), TR("Logging to %s (card %llu MB, %s)"), log_name, (unsigned long long)mb,
+           sd_spi ? TR("SPI") : TR("SD mode"));
   logf("SD: mounted, card %llu MB (%s)", (unsigned long long)mb, sd_spi ? "SPI" : "SD mode");
   static bool header_written = false;  // once per boot, not once per mount
   if (!header_written) {
@@ -250,7 +251,7 @@ void sd_log_unmount() {
   if (sd_spi) SD.end();
   else SD_MMC.end();
   sd_mounted = false;
-  strlcpy(sd_msg, "Card not in use", sizeof(sd_msg));
+  strlcpy(sd_msg, TR("Card not in use"), sizeof(sd_msg));
 }
 
 bool sd_log_ok() {
@@ -271,12 +272,10 @@ void log_begin() {
   if (!ring) USBSerial.println("Log ring buffer allocation failed");
 }
 
-void logf(const char *fmt, ...) {
+/* One log line to USB serial (if wanted), the ring buffer behind /log and the card */
+static void log_line(bool to_serial, const char *fmt, va_list ap) {
   char buf[200];
-  va_list ap;
-  va_start(ap, fmt);
   int n = vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
-  va_end(ap);
   if (n < 0) return;
   if (n > (int)sizeof(buf) - 2) n = sizeof(buf) - 2;
   if (n && buf[n - 1] != '\n') {  // every entry is one line
@@ -284,7 +283,7 @@ void logf(const char *fmt, ...) {
     buf[n] = 0;
   }
 
-  USBSerial.print(buf);
+  if (to_serial) USBSerial.print(buf);
   if (!log_mtx) return;
 
   if (xSemaphoreTake(log_mtx, pdMS_TO_TICKS(50)) != pdTRUE) {
@@ -314,6 +313,43 @@ void logf(const char *fmt, ...) {
   xSemaphoreGive(log_mtx);
 }
 
+/* Normal log lines: always kept in /log and on the card, on USB serial only
+   when the serial monitor is switched on (Settings -> Device -> Debug) */
+void logf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  log_line(feat_serial, fmt, ap);
+  va_end(ap);
+}
+
+/* Errors and warnings: on USB serial too, even with the serial monitor off */
+void log_fault(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  log_line(true, fmt, ap);
+  va_end(ap);
+}
+
+/* Diagnostics for USB serial only (boot figures, BLE frames): serial monitor on */
+void serf(const char *fmt, ...) {
+  if (!feat_serial) return;
+  char buf[200];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  USBSerial.print(buf);
+}
+
+void serln(const char *s) {
+  if (feat_serial) USBSerial.println(s);
+}
+
+/* ESP-IDF's own messages (WiFi, SD driver ...): errors only unless the monitor is on */
+void serial_apply() {
+  esp_log_level_set("*", feat_serial ? ESP_LOG_WARN : ESP_LOG_ERROR);
+}
+
 /* Copies the ring buffer, oldest first, into the caller's String */
 void log_dump(String &out) {
   if (!ring || !log_mtx) return;
@@ -332,7 +368,7 @@ const char *sd_log_name() {
 /* Card type, size and how much is used */
 void sd_card_info(char *out, size_t n) {
   if (!sd_mounted) {
-    snprintf(out, n, "No card mounted");
+    snprintf(out, n, TR("No card mounted"));
     return;
   }
   const char *type = "unknown";
@@ -344,7 +380,7 @@ void sd_card_info(char *out, size_t n) {
   }
   uint64_t total = (sd_spi ? SD.totalBytes() : SD_MMC.totalBytes()) / (1024 * 1024);
   uint64_t used = (sd_spi ? SD.usedBytes() : SD_MMC.usedBytes()) / (1024 * 1024);
-  snprintf(out, n, "%s card, %llu MB used of %llu MB", type, (unsigned long long)used, (unsigned long long)total);
+  snprintf(out, n, TR("%s card, %llu MB used of %llu MB"), type, (unsigned long long)used, (unsigned long long)total);
 }
 
 /* Starts a new file: caravan.log, caravan-1.log, caravan-2.log ... */
@@ -362,7 +398,7 @@ bool sd_log_new_file() {
   }
   log_file = sd_fs().open(log_name, FILE_WRITE);
   bool ok = (bool)log_file;
-  snprintf(sd_msg, sizeof(sd_msg), ok ? "Logging to %s" : "Could not create %s", log_name);
+  snprintf(sd_msg, sizeof(sd_msg), ok ? TR("Logging to %s") : TR("Could not create %s"), log_name);
   xSemaphoreGive(log_mtx);
   return ok;
 }
@@ -414,11 +450,11 @@ void log_boot_banner() {
        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
        heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 #ifndef LV_MEM_POOL_ALLOC
-  logf("WARNING: LVGL's pool is in internal RAM. Put these in lv_conf.h:");
-  logf("  #define LV_MEM_POOL_INCLUDE <esp32-hal-psram.h>");
-  logf("  #define LV_MEM_POOL_ALLOC ps_malloc");
-  logf("  (without them the UI can run out of memory and crash in build_ui)");
+  log_fault("WARNING: LVGL's pool is in internal RAM. Put these in lv_conf.h:");
+  log_fault("  #define LV_MEM_POOL_INCLUDE <esp32-hal-psram.h>");
+  log_fault("  #define LV_MEM_POOL_ALLOC ps_malloc");
+  log_fault("  (without them the UI can run out of memory and crash in build_ui)");
 #endif
   if (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) < 1000000)
-    logf("WARNING: little or no PSRAM. Set Tools -> PSRAM to OPI PSRAM.");
+    log_fault("WARNING: little or no PSRAM. Set Tools -> PSRAM to OPI PSRAM.");
 }

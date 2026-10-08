@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Warnings and alarms.
  * Every check runs once a second and produces at most one message. The most
  * important one is shown as a banner on the Home page and on the web page, and
@@ -100,27 +101,27 @@ void alarms_check() {
   }
 
   if (!isnan(soc)) {
-    if (soc <= alarm_cfg.soc_alarm) add_alarm(ALARM_LEVEL_ALARM, "Battery %.0f%% - charge now", soc);
-    else if (soc <= alarm_cfg.soc_warn) add_alarm(ALARM_LEVEL_WARN, "Battery low: %.0f%%", soc);
+    if (soc <= alarm_cfg.soc_alarm) add_alarm(ALARM_LEVEL_ALARM, TR("Battery %.0f%% - charge now"), soc);
+    else if (soc <= alarm_cfg.soc_warn) add_alarm(ALARM_LEVEL_WARN, TR("Battery low: %.0f%%"), soc);
   }
   if (!isnan(volt)) {
-    if (volt < 11.8f) add_alarm(ALARM_LEVEL_ALARM, "Battery voltage low: %.2f V", volt);
-    else if (volt > 15.0f) add_alarm(ALARM_LEVEL_ALARM, "Battery voltage high: %.2f V", volt);
+    if (volt < 11.8f) add_alarm(ALARM_LEVEL_ALARM, TR("Battery voltage low: %.2f V"), volt);
+    else if (volt > 15.0f) add_alarm(ALARM_LEVEL_ALARM, TR("Battery voltage high: %.2f V"), volt);
   }
   if (ttg >= 0 && ttg < 120 && !isnan(curr) && curr < 0)
-    add_alarm(ALARM_LEVEL_WARN, "Battery empty in %dh %02dm", ttg / 60, ttg % 60);
+    add_alarm(ALARM_LEVEL_WARN, TR("Battery empty in %dh %02dm"), ttg / 60, ttg % 60);
 
   /* ---- Victron devices ---- */
   for (int i = 0; i < MAX_VIC; i++) {
     if (!cfg[i].used) continue;
     if (dat[i].key_bad) {
-      add_alarm(ALARM_LEVEL_WARN, "%s: wrong key", cfg[i].name);
+      add_alarm(ALARM_LEVEL_WARN, TR("%s: wrong key"), cfg[i].name);
     } else if (dat[i].last_seen && now - dat[i].last_seen > 600000UL) {
-      add_alarm(ALARM_LEVEL_WARN, "%s: no signal", cfg[i].name);
+      add_alarm(ALARM_LEVEL_WARN, TR("%s: no signal"), cfg[i].name);
     }
     if (cfg[i].type == VIC_INVERTER && vic_fresh(dat[i], now) && dat[i].key_ok) {
       const char *a = vic_alarm_text(dat[i].alarm);
-      if (a) add_alarm(ALARM_LEVEL_ALARM, "Inverter: %s", a);
+      if (a) add_alarm(ALARM_LEVEL_ALARM, TR("Inverter: %s"), TR(a));
     }
   }
 
@@ -135,7 +136,7 @@ void alarms_check() {
   bool have_ssid = g.ssid[0] != 0;
   UNLOCK();
   if (w.valid && alarm_cfg.wind_warn && w.wind >= alarm_cfg.wind_warn)
-    add_alarm(ALARM_LEVEL_WARN, "Wind %.0f m/s - take the awning in", w.wind);
+    add_alarm(ALARM_LEVEL_WARN, TR("Wind %.0f m/s - take the awning in"), w.wind);
 
   /* ---- WiFi (not while we have switched it off ourselves) ---- */
   if (power_on_battery()) have_ssid = false;
@@ -143,7 +144,7 @@ void alarms_check() {
   static uint32_t wifi_lost_since = 0;
   if (have_ssid && WiFi.status() != WL_CONNECTED) {
     if (!wifi_lost_since) wifi_lost_since = now;
-    if (now - wifi_lost_since > 120000UL) add_alarm(ALARM_LEVEL_WARN, "WiFi lost");
+    if (now - wifi_lost_since > 120000UL) add_alarm(ALARM_LEVEL_WARN, TR("WiFi lost"));
   } else {
     wifi_lost_since = 0;
   }
@@ -165,13 +166,13 @@ void alarms_check() {
     }
   }
   if (lipo_low || lipo_warn) {
-    if (lipo_low) add_alarm(ALARM_LEVEL_ALARM, "Board battery %.2f V - shutting down soon", lipo_v);
-    else add_alarm(ALARM_LEVEL_WARN, "Board battery low (%.2f V)", lipo_v);
+    if (lipo_low) add_alarm(ALARM_LEVEL_ALARM, TR("Board battery %.2f V - shutting down soon"), lipo_v);
+    else add_alarm(ALARM_LEVEL_WARN, TR("Board battery low (%.2f V)"), lipo_v);
   }
 
   /* ---- relays and card ---- */
-  if (feat_relays && relay_cfg.addr && !pcf_ok) add_alarm(ALARM_LEVEL_WARN, "Relay board not answering");
-  if (alarm_cfg.warn_sd && feat_sdlog && !sd_log_ok()) add_alarm(ALARM_LEVEL_WARN, "SD card not available");
+  if (feat_relays && relay_cfg.addr && !pcf_ok) add_alarm(ALARM_LEVEL_WARN, TR("Relay board not answering"));
+  if (alarm_cfg.warn_sd && feat_sdlog && !sd_log_ok()) add_alarm(ALARM_LEVEL_WARN, TR("SD card not available"));
 
   /* a new top alarm wakes the screen saver */
   char top[48] = "";
@@ -182,7 +183,7 @@ void alarms_check() {
     }
   if (top[0] && strcmp(top, last_top)) {
     new_alarm_flag = true;
-    logf("ALARM: %s", top);
+    log_fault("ALARM: %s", top);
   }
   strlcpy(last_top, top, sizeof(last_top));
   xSemaphoreGive(alarm_mtx);

@@ -1,6 +1,7 @@
+<!-- esp32-S3-ws4-caravan v1.0 -->
 # esp32-S3-ws4-caravan
 
-**Version 1.0.1 Stable.** What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+**Version 1.0** - the first release. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 See **[BOARD_NOTES.md](BOARD_NOTES.md)** for hard-won notes about this board: SD card wiring, memory limits, LVGL 8 pitfalls and the BLE protocols used here.
 
@@ -12,13 +13,15 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | | |
 |---|---|
 | ![Home](screen-home.png) | ![Power](screen-power.png) |
-| **Home** – clock between battery and solar gauges, ten-minute graphs under each, temperatures and relays below | **Power** – the battery in the middle, chargers left, AC side right, DC loads below; each connection lights up in its own colour while energy flows |
+| **Home** – clock between battery and solar gauges, ten-minute graphs under each, temperatures and relays below, WiFi signal top right | **Power** – the battery in the middle, chargers left, AC side right, DC loads below; each connection lights up in its own colour while energy flows |
 | ![Alarm](screen-alarm.png) | ![History](screen-history.png) |
 | **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
 | ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
 | **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
 | ![Settings: Connect](screen-settings.png) | ![Settings: Device](screen-settings-device.png) |
 | **Settings → Connect** – WiFi, the web page and the weather location | **Settings → Device** – display, power saving, alarms, SD card |
+| ![Ruuvi](screen-ruuvi.png) | |
+| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | |
 
 *Screens drawn to scale with example values.*
 
@@ -28,7 +31,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 |---|---|
 | **⌂ Start** | Large clock and date between two gradient gauges: battery on the left with Time To Go, solar on the right. Ten-minute graphs under each, then inside and outside temperature and how many relays are on. A warning banner appears across the top when something needs attention |
 | **Power** | The battery in the middle, chargers on the left, the AC side on the right, DC loads below. Each connection lights up in its device's colour while energy flows, and the solar, battery and loads tiles carry a ten-minute graph. Tap any tile for the history: solar and consumption per hour over 24 hours, or per day over 7 days |
-| **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery, signal and age |
+| **Ruuvi** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery and signal, and a chart of the last 7 days per tag: each day's low (blue) and high (orange), in the colours of Victron VRM. The 7-day high and low sit under the reading. The history is kept in flash, so it survives a restart |
 | **Weather** | Current conditions, high and low, feels-like, humidity, wind and a 3-day forecast (Open-Meteo) |
 | **Shelly** | Up to 4 plugs or switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): power, on/off, and the reason when something fails. Hidden until a device is added |
 | **Relays** | Up to 8 relays on a PCF8574, each an Off \| On control in the Victron switch-pane style. Hidden until a board answers |
@@ -59,13 +62,24 @@ Each page is a column of cards.
 | **Connect** | **WiFi** (scan, password, status) &middot; **Web page** (run the server, name, password, remote admin) &middot; **Weather location** |
 | **Sensors** | **Temperature** (up to 3 RuuviTags) &middot; **Battery (BMS)** &middot; **Victron devices** (add, name, encryption key, live status) &middot; **Sensor scan interval** |
 | **Control** | **Shelly** (WiFi or Bluetooth, up to 4) &middot; **Schedules** (per relay and Shelly device) &middot; **Relays** (address, active low, count, names) &middot; **I2C devices** |
-| **Device** | **Power** (CPU slowdown, performance log, onboard LiPo, battery mode and its shutdown threshold) &middot; **Display** (brightness, screen saver brightness) &middot; **Alarms** (thresholds, wake the screen, SD warning) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **About** &middot; **System** (restart, shut down, full reset) |
+| **Device** | **Language** (English, Svenska) &middot; **Power** (CPU slowdown, onboard LiPo, battery mode and its shutdown threshold) &middot; **Display** (brightness, screen saver brightness) &middot; **Alarms** (thresholds, wake the screen, SD warning) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **Debug** (serial monitor, performance log) &middot; **About** &middot; **System** (restart, shut down, full reset) |
 
 Temperature, Battery, Relays and Shelly each have an on/off switch: switching one off also stops
 its background work and takes its tab off the tab bar. Relays and Shelly also hide themselves
 when nothing is connected.
 
 ![Settings: Sensors](screen-settings-sensors.png)
+
+## Language
+
+The display speaks **English** (the default) or **Swedish**, chosen under Settings → Device →
+Language. Changing it restarts the board, which takes a few seconds. Both are built into the
+firmware, so no SD card is needed. The web page stays in English, apart from the status texts
+it shares with the display.
+
+Translations are ordinary gettext `.po` files in `lang/`, so they can be edited with
+[Poedit](https://poedit.net/), and new languages can be added the same way. See
+[`lang/README.md`](lang/README.md).
 
 ## Screen saver
 
@@ -88,6 +102,19 @@ the memory the page building uses. Otherwise, under **Settings → Web page** yo
 
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
+## Version numbers
+
+The version is `FW_VERSION` in `app.h`. It is shown under Settings → Device → About, on the
+web page and in the first log line, and every file carries it on its first line as a comment
+(`// esp32-S3-ws4-caravan v1.0`). To change it everywhere at once:
+
+```
+python3 tools/set_version.py 1.1
+```
+
+Run it without a number after adding a file, to tag the new file with the current version.
+Every change gets an entry in [CHANGELOG.md](CHANGELOG.md).
+
 ## Getting started
 
 1. Install the libraries and set the Arduino IDE options listed below.
@@ -99,7 +126,7 @@ After 30 seconds without touch, a screen saver shows a dim clock and lowers the 
    - **Victron devices:** pick a device, tap Add, then enter a name and its 32-character encryption key.
    - **Relay board:** tap *Scan I2C bus* to find the PCF8574, then choose its address.
 
-The Serial Monitor (115200 baud) logs startup, free memory, WiFi and weather lookups.
+The Serial Monitor (115200 baud) shows faults only by default; switch on Settings → Device → Debug → Serial monitor to see startup, free memory, WiFi and weather lookups as well.
 
 ## Files
 
@@ -132,13 +159,19 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `ui_battery.cpp` | Battery tab (experimental) |
 | `ui_relays.cpp` | Relays tab + relay and I2C settings |
 | `ui_shelly.cpp` | Shelly tab + Shelly pairing settings |
-| `ui_temp.cpp` | Temp tab (RuuviTag cards) |
+| `ui_temp.cpp` | Ruuvi tab (RuuviTag cards with a 7-day chart each) |
+| `ruuvi_hist.cpp` | Daily low and high per RuuviTag for the last 7 days, kept in flash |
 | `ui_weather.cpp` | Weather tab and clock |
 | `ui_settings.cpp` | Settings tab (WiFi, location, RuuviTags, display, scan interval) |
 | `ui_victron_settings.cpp` | Victron device settings |
 | `ui_saver.cpp` | Screen saver |
 | `font_clock_96.c` | 96 px clock font for the screen saver (digits, `:` and `-`) |
-| `screen-*.png` | Screenshots for this README |
+| `lang.cpp` | Language: looks texts up in the built-in translations, swaps in the Latin-1 fonts |
+| `lang_tables.h` | The built-in translations, generated from `lang/*.po` by `tools/i18n.py` |
+| `font_latin1.c` | The Latin-1 letters (å ä ö é ü ...) missing from LVGL's built-in fonts, used when translated |
+| `lang/` | `caravan.pot` (the texts to translate) and one `.po` file per language |
+| `tools/` | `i18n.py` (template and built-in tables), `gen_font_latin1.py` (the fonts), `set_version.py` (the version, everywhere) |
+| `screen-*.png` | Screenshots for this README (`screen-ruuvi.png` is rendered by LVGL on a PC with example data) |
 | `memory.md` | Notes and plan for lowering memory use and latency |
 | `CHANGELOG.md` | What changed in each version |
 | `lv_conf.example.h` | LVGL settings that suit this board and PSRAM-less boards alike |
@@ -192,8 +225,17 @@ Optional, in `lv_conf.h`:
 
 ## Logging
 
-Diagnostics (Bluetooth frames, connections, errors) go to the Serial Monitor and to a
-24 kB buffer in PSRAM that you can read in a browser at `/log` without attaching a computer.
+Everything the firmware logs goes to a 24 kB buffer in PSRAM that you can read in a browser
+at `/log` without attaching a computer, and to the TF card when that is switched on.
+
+**USB serial (Arduino's Serial Monitor):** off by default, and then only faults are written
+there: errors and warnings, such as an SD card that can't be found, a lost WiFi connection, a
+touch controller that didn't answer, low memory or a battery shutdown. Switch on
+**Settings → Device → Debug → Serial monitor** to see everything as well: the boot figures,
+memory, connections and sensor details. The switch is saved, and it is read first thing at
+start-up, so the boot lines follow it too. ESP-IDF's own messages follow it as well: errors
+only when it's off, warnings too when it's on. The same section has **Log memory, CPU and
+battery**, a status line every few seconds for chasing memory or stack problems.
 Switch on **Settings → SD card** to also append everything to `/caravan.log` on the TF card
 (SPI: GPIO2 clock, GPIO1 MOSI, GPIO4 MISO). The file is flushed every 5 seconds. The same section has Mount, Eject, New log and Delete old logs, plus card type and free space. Log files can be listed and downloaded in the browser at `/files`.
 
@@ -225,7 +267,7 @@ restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly
 | Problem | Likely cause |
 |---|---|
 | Settings are gone after an upload | *Erase All Flash Before Sketch Upload* is enabled |
-| City lookup or weather fails | Check the `HTTP` and `Internal heap` lines in the Serial Monitor. Low free RAM breaks network requests |
+| City lookup or weather fails | Check the `HTTP` and `Internal heap` lines in the Serial Monitor (failed requests are always shown). Low free RAM breaks network requests |
 | Victron device shows "Wrong key" | Key mistyped, or it changed in VictronConnect |
 | Victron device shows "No signal" | Out of range, or Instant readout switched off |
 | Relays show "No answer from PCF8574" | Wrong address (run the I2C scan), wiring, or power |

@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Timed switching for relays and Shelly devices.
  *
  * One schedule per output: an on time, an off time and the days it applies.
@@ -82,14 +83,16 @@ bool schedule_overridden(int i) {
   return i >= 0 && i < SCHED_COUNT && override_on[i];
 }
 
-/* Minutes since midnight, or -1 when the clock is not set */
+/* Minutes since midnight, or -1 when the clock is not set.
+   The weekday is returned Monday-first (0 = Monday ... 6 = Sunday), which is how
+   the schedules store their days. */
 static int local_minutes(int *weekday) {
   time_t t = time(nullptr);
   if (t < 1700000000) return -1;
   t += g.utc_offset;
   struct tm tm;
   gmtime_r(&t, &tm);
-  if (weekday) *weekday = tm.tm_wday;  // 0 = Sunday
+  if (weekday) *weekday = (tm.tm_wday + 6) % 7;  // tm_wday has 0 = Sunday
   return tm.tm_hour * 60 + tm.tm_min;
 }
 
@@ -104,17 +107,17 @@ static bool in_window(const Schedule &s, int now_min) {
 void schedule_status(int i, char *out, size_t len) {
   const Schedule &s = sched[i];
   if (!s.enabled) {
-    snprintf(out, len, "No schedule");
+    snprintf(out, len, TR("No schedule"));
     return;
   }
   int wd = 0;
   int now_min = local_minutes(&wd);
   if (now_min < 0) {
-    snprintf(out, len, "%02d:%02d-%02d:%02d (waiting for the clock)", s.on_min / 60, s.on_min % 60, s.off_min / 60, s.off_min % 60);
+    snprintf(out, len, TR("%02d:%02d-%02d:%02d (waiting for the clock)"), s.on_min / 60, s.on_min % 60, s.off_min / 60, s.off_min % 60);
     return;
   }
   snprintf(out, len, "%02d:%02d-%02d:%02d%s%s", s.on_min / 60, s.on_min % 60, s.off_min / 60, s.off_min % 60,
-           (s.days & (1 << wd)) ? "" : " (not today)", override_on[i] ? ", overridden" : "");
+           (s.days & (1 << wd)) ? "" : TR(" (not today)"), override_on[i] ? TR(", overridden") : "");
 }
 
 /* Called from loop(); acts once a minute */

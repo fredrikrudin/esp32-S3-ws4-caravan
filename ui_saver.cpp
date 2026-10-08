@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Screen saver: dim clock + battery state of charge, lower backlight,
    after SAVER_TIMEOUT_MS without touch.
    It is a separate LVGL screen, so the main UI isn't redrawn while it shows. */
@@ -54,6 +55,7 @@ void build_saver() {
   main_scr = lv_scr_act();
 
   saver_scr = lv_obj_create(NULL);
+  ui_font_apply(saver_scr);
   lv_obj_set_style_bg_color(saver_scr, lv_color_black(), 0);
   lv_obj_set_style_bg_opa(saver_scr, LV_OPA_COVER, 0);
   lv_obj_clear_flag(saver_scr, LV_OBJ_FLAG_SCROLLABLE);

@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* External I2C: PCF8574 relays and bus scan.
    Same bus as touch and the CH32 chip (GPIO15/7), only used from the main loop.
    The PCF8574 is rated for 100 kHz, so the bus is slowed down while talking to it. */

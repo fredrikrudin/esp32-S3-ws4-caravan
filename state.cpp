@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Shared state, settings loading and small helpers */
 #include "app.h"
 
@@ -15,12 +16,15 @@ VicSeen vic_seen[MAX_VIC_SEEN];
 RelayCfg relay_cfg = { 0, true, 8, {} };
 BmsCfg bms_cfg = { "", 0, "" };
 ShellyCfg shelly_cfg[MAX_SHELLY];
+SplashCfg splash_cfg = { "CABBY", 48, 0xD6, 0x00, 0x1C, 5 };  // Cabby red
 uint8_t relay_state = 0;
 bool pcf_ok = false;
 
 volatile bool cmd_scan = false, cmd_connect = false, cmd_geocode = false, cmd_weather = false;
 volatile bool cmd_save_ruuvi = false, cmd_save_vic = false, cmd_save_scan = false;
-volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false, cmd_save_web = false, cmd_save_feat = false, cmd_save_shelly = false, cmd_save_alarm = false, cmd_save_sched = false;
+volatile bool cmd_save_lang = false;
+volatile bool cmd_save_rhist = false;
+volatile bool cmd_save_bl = false, cmd_save_relay = false, cmd_save_bms = false, cmd_save_web = false, cmd_save_feat = false, cmd_save_shelly = false, cmd_save_alarm = false, cmd_save_sched = false, cmd_save_splash = false;
 volatile bool scan_restart = false;
 
 volatile bool feat_ruuvi = true, feat_relays = true, feat_bms = ENABLE_BMS;
@@ -30,6 +34,7 @@ volatile bool feat_remote = false;  // switching from the web page is off until 
 volatile bool feat_sdlog = false;   // logging to the TF card is off until switched on
 volatile bool feat_powersave = true;   // on by default: it only slows the CPU while asleep
 volatile bool feat_perflog = false;
+volatile bool feat_serial = false;
 volatile bool feat_battmode = false;  // off until switched on
 volatile uint8_t batt_shutdown_pct = 20;
 volatile bool feat_csv = false;     // measurement logging is off until switched on
@@ -48,6 +53,9 @@ void state_init() {
 
 void load_cfg() {
   prefs.begin("wx", false);
+  prefs.getString("lang", ui_lang, sizeof(ui_lang));
+  if (!ui_lang[0]) strlcpy(ui_lang, "en", sizeof(ui_lang));
+  lang_begin();  // before anything below builds text
   prefs.getString("ssid", g.ssid, sizeof(g.ssid));
   prefs.getString("pass", g.pass, sizeof(g.pass));
   prefs.getString("city", g.city, sizeof(g.city));
@@ -60,8 +68,8 @@ void load_cfg() {
   g.lon = prefs.getFloat("lon", 0);
   g.offset_valid = prefs.isKey("utcoff");
   g.utc_offset = prefs.getInt("utcoff", 0);
-  if (g.has_loc) snprintf(g.loc_status, sizeof(g.loc_status), "Location: %s", g.place);
-  else strlcpy(g.loc_status, "No location set", sizeof(g.loc_status));
+  if (g.has_loc) snprintf(g.loc_status, sizeof(g.loc_status), TR("Location: %s"), g.place);
+  else strlcpy(g.loc_status, TR("No location set"), sizeof(g.loc_status));
 
   uint8_t feat = prefs.getUChar("feat", 0x01 | 0x02 | (ENABLE_BMS ? 0x04 : 0));
   feat_ruuvi = feat & 0x01;
@@ -74,6 +82,10 @@ void load_cfg() {
   feat_csv = feat & 0x40;
   feat_powersave = !(feat & 0x80);  // stored inverted, so old settings default to on
   csv_interval_min = constrain(prefs.getUChar("csvmin", 5), 1, 60);
+  if (prefs.getBytesLength("rhist") == sizeof(ruuvi_hist)) prefs.getBytes("rhist", ruuvi_hist, sizeof(ruuvi_hist));
+  if (prefs.getBytesLength("splash") == sizeof(splash_cfg)) prefs.getBytes("splash", &splash_cfg, sizeof(splash_cfg));
+  if (!splash_cfg.text[0]) strlcpy(splash_cfg.text, "CABBY", sizeof(splash_cfg.text));
+
   feat_battmode = prefs.getUChar("battmode", 0);
   batt_shutdown_pct = constrain(prefs.getUChar("battpct", 20), 5, 60);
 
@@ -115,7 +127,7 @@ void load_cfg() {
   int nvic = 0;
   for (int i = 0; i < MAX_VIC; i++) nvic += vic_cfg[i].used;
 
-  USBSerial.printf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi=%d victron=%d relay=0x%02X bms='%s'\n",
+  serf("Loaded: ssid='%s' city='%s' place='%s' lat=%.4f lon=%.4f ruuvi=%d victron=%d relay=0x%02X bms='%s'\n",
                    g.ssid, g.city, g.place, g.lat, g.lon, nruuvi, nvic, relay_cfg.addr, bms_cfg.name);
 }
 
@@ -157,26 +169,26 @@ void mac_short(const char *addr, char *out) {
 
 const char *wmo_text(int c) {
   switch (c) {
-    case 0: return "Clear sky";
-    case 1: return "Mainly clear";
-    case 2: return "Partly cloudy";
-    case 3: return "Overcast";
-    case 45: case 48: return "Fog";
-    case 51: case 53: case 55: return "Drizzle";
-    case 56: case 57: return "Freezing drizzle";
-    case 61: return "Light rain";
-    case 63: return "Rain";
-    case 65: return "Heavy rain";
-    case 66: case 67: return "Freezing rain";
-    case 71: return "Light snow";
-    case 73: return "Snow";
-    case 75: return "Heavy snow";
-    case 77: return "Snow grains";
-    case 80: case 81: case 82: return "Showers";
-    case 85: case 86: return "Snow showers";
-    case 95: return "Thunderstorm";
-    case 96: case 99: return "Thunder + hail";
-    default: return "Unknown";
+    case 0: return N_("Clear sky");
+    case 1: return N_("Mainly clear");
+    case 2: return N_("Partly cloudy");
+    case 3: return N_("Overcast");
+    case 45: case 48: return N_("Fog");
+    case 51: case 53: case 55: return N_("Drizzle");
+    case 56: case 57: return N_("Freezing drizzle");
+    case 61: return N_("Light rain");
+    case 63: return N_("Rain");
+    case 65: return N_("Heavy rain");
+    case 66: case 67: return N_("Freezing rain");
+    case 71: return N_("Light snow");
+    case 73: return N_("Snow");
+    case 75: return N_("Heavy snow");
+    case 77: return N_("Snow grains");
+    case 80: case 81: case 82: return N_("Showers");
+    case 85: case 86: return N_("Snow showers");
+    case 95: return N_("Thunderstorm");
+    case 96: case 99: return N_("Thunder + hail");
+    default: return N_("Unknown");
   }
 }
 

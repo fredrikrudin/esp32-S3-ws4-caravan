@@ -1,3 +1,4 @@
+<!-- esp32-S3-ws4-caravan v1.0 -->
 # Board notes: Waveshare ESP32-S3-Touch-LCD-4 (V4)
 
 Things that cost time to find out, so the next project doesn't have to.
@@ -143,7 +144,7 @@ is connected (a battery held open plus a Shelly, say). Leave `nimconfig.h` alone
 
 ## Habits that saved time here
 
-- **Log to three places**: Serial, a PSRAM ring buffer served at `/log`, and the TF card.
+- **Log to three places**: Serial, a PSRAM ring buffer served at `/log`, and the TF card. USB serial gets only faults (`log_fault()`) unless the serial monitor is switched on under Settings → Device → Debug; `/log` and the card always get everything.
   Reading a log on a phone beats carrying a laptop to the vehicle.
 - **Settings backup to the card** (`/settings.json`) makes an accidental flash erase harmless.
 - **A probe beats a guess**: when a bus won't come up, try every combination in code and log

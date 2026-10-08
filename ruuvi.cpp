@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* RuuviTag BLE advertisement decoding (data formats 5 and 3) */
 #include "app.h"
 

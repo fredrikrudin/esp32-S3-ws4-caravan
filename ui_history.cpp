@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* History screen, opened from the Power tab.
    Bars of solar and consumption per hour (last 24 h) or per day (last 7 days),
    with totals beside them, in the style of Victron VRM. */
@@ -8,7 +9,7 @@ static lv_chart_series_t *ser_solar, *ser_load;
 static lv_obj_t *back_from = nullptr;
 static bool daily = false;  // false = 24 hours, true = 30 days
 
-static const char *period_map[] = { "24 hours", "7 days", "" };
+static const char *period_map[3];  // filled when the screen is built, translated
 
 /* X axis labels: hours ago / days ago, every few bars so they stay readable */
 static void chart_draw_cb(lv_event_t *e) {
@@ -18,7 +19,7 @@ static void chart_draw_cb(lv_event_t *e) {
 
   int n = daily ? HIST_DAYS : HIST_HOURS;
   int ago = n - 1 - dsc->value;  // 0 = the period just finished
-  if (ago == 0) lv_snprintf(dsc->text, dsc->text_length, "now");
+  if (ago == 0) lv_snprintf(dsc->text, dsc->text_length, TR("now"));
   else lv_snprintf(dsc->text, dsc->text_length, "-%d%s", ago, daily ? "d" : "h");
 }
 
@@ -44,12 +45,12 @@ static void refresh_chart() {
 
   float solar_kwh, load_kwh;
   history_totals(daily, &solar_kwh, &load_kwh);
-  lv_label_set_text_fmt(lbl_period, "%s  %s", daily ? "Last 7 days" : "Last 24 hours",
-                        daily ? "(kWh per day)" : "(Wh per hour)");
+  lv_label_set_text_fmt(lbl_period, "%s  %s", daily ? TR("Last 7 days") : TR("Last 24 hours"),
+                        daily ? TR("(kWh per day)") : TR("(Wh per hour)"));
   char b[48];
-  snprintf(b, sizeof(b), "%.2f kWh", solar_kwh);
+  snprintf(b, sizeof(b), TR("%.2f kWh"), solar_kwh);
   set_label(lbl_solar, b);
-  snprintf(b, sizeof(b), "%.2f kWh", load_kwh);
+  snprintf(b, sizeof(b), TR("%.2f kWh"), load_kwh);
   set_label(lbl_load, b);
 
   float soc = a[n - 1].soc;
@@ -86,6 +87,7 @@ static lv_obj_t *summary_box(lv_obj_t *parent, const char *title, uint32_t color
 
 void build_history_screen() {
   hist_scr = lv_obj_create(NULL);
+  ui_font_apply(hist_scr);
   lv_obj_set_style_bg_color(hist_scr, lv_color_hex(0x15171A), 0);
   lv_obj_set_style_pad_all(hist_scr, 8, 0);
   lv_obj_clear_flag(hist_scr, LV_OBJ_FLAG_SCROLLABLE);
@@ -95,6 +97,9 @@ void build_history_screen() {
   lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 0);
   make_btn(row, LV_SYMBOL_LEFT " Back", back_cb);
   period_sel = lv_btnmatrix_create(row);
+  period_map[0] = TR("24 hours");
+  period_map[1] = TR("7 days");
+  period_map[2] = "";
   lv_btnmatrix_set_map(period_sel, period_map);
   lv_obj_set_size(period_sel, 260, 44);
   lv_btnmatrix_set_btn_ctrl_all(period_sel, LV_BTNMATRIX_CTRL_CHECKABLE | LV_BTNMATRIX_CTRL_NO_REPEAT);
@@ -132,11 +137,11 @@ void build_history_screen() {
 
   /* totals */
   lv_obj_t *box;
-  box = summary_box(hist_scr, LV_SYMBOL_CHARGE " Solar", 0xF39C12, &lbl_solar);
+  box = summary_box(hist_scr, TR(LV_SYMBOL_CHARGE " Solar"), 0xF39C12, &lbl_solar);
   lv_obj_align(box, LV_ALIGN_BOTTOM_LEFT, 0, -4);
-  box = summary_box(hist_scr, LV_SYMBOL_POWER " Consumption", 0xE74C3C, &lbl_load);
+  box = summary_box(hist_scr, TR(LV_SYMBOL_POWER " Consumption"), 0xE74C3C, &lbl_load);
   lv_obj_align(box, LV_ALIGN_BOTTOM_MID, 0, -4);
-  box = summary_box(hist_scr, LV_SYMBOL_BATTERY_FULL " Battery now", 0x3498DB, &lbl_soc);
+  box = summary_box(hist_scr, TR(LV_SYMBOL_BATTERY_FULL " Battery now"), 0x3498DB, &lbl_soc);
   lv_obj_align(box, LV_ALIGN_BOTTOM_RIGHT, 0, -4);
 }
 

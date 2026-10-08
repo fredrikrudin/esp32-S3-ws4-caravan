@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Battery tab: BMS values and diagnostics.
    The battery itself is chosen under Settings -> Battery. */
 #include "app.h"
@@ -81,18 +82,18 @@ void battery_timer_cb(lv_timer_t *t) {
       strlcat(b, w, sizeof(b));
     }
     char cap[48];
-    snprintf(cap, sizeof(cap), "%.1f / %.0f Ah", d.remain_ah, d.nominal_ah);
+    snprintf(cap, sizeof(cap), TR("%.1f / %.0f Ah"), d.remain_ah, d.nominal_ah);
     strlcat(b, cap, sizeof(b));
     if (d.cycles) {
       char cy[24];
-      snprintf(cy, sizeof(cy), "   %d cycles", d.cycles);
+      snprintf(cy, sizeof(cy), TR("   %d cycles"), d.cycles);
       strlcat(b, cy, sizeof(b));
     }
     set_label(lbl_line1, b);
 
     b[0] = 0;
     if (d.ntemp) {
-      strlcat(b, "Temp", sizeof(b));
+      strlcat(b, TR("Temp"), sizeof(b));
       for (int i = 0; i < d.ntemp; i++) {
         char tt[16];
         snprintf(tt, sizeof(tt), " %.0f" DEG "C", d.temp[i]);
@@ -102,14 +103,14 @@ void battery_timer_cb(lv_timer_t *t) {
     }
     if (d.has_fets) {
       char fets[48];
-      snprintf(fets, sizeof(fets), "Charge %s  Discharge %s", d.chg_fet ? "ON" : "OFF", d.dsg_fet ? "ON" : "OFF");
+      snprintf(fets, sizeof(fets), TR("Charge %s  Discharge %s"), d.chg_fet ? TR("ON") : TR("OFF"), d.dsg_fet ? TR("ON") : TR("OFF"));
       strlcat(b, fets, sizeof(b));
     }
     set_label(lbl_line2, b);
 
     if (d.cells_valid && d.ncell) {
       float mn = d.cell[0], mx = d.cell[0];
-      strcpy(b, d.ncell > 4 ? "" : "Cells");
+      strcpy(b, d.ncell > 4 ? "" : TR("Cells"));
       for (int i = 0; i < d.ncell; i++) {
         char c[12];
         snprintf(c, sizeof(c), "  %.3f", d.cell[i]);
@@ -118,14 +119,14 @@ void battery_timer_cb(lv_timer_t *t) {
         if (d.cell[i] > mx) mx = d.cell[i];
       }
       char dl[24];
-      snprintf(dl, sizeof(dl), "\nDifference %.0f mV", (mx - mn) * 1000);
+      snprintf(dl, sizeof(dl), TR("\nDifference %.0f mV"), (mx - mn) * 1000);
       strlcat(b, dl, sizeof(b));
       set_label(lbl_cells, b);
     }
 
     const char *prot = bms_protection_text(d.protection);
     if (prot) {
-      snprintf(b, sizeof(b), LV_SYMBOL_WARNING " %s", prot);
+      snprintf(b, sizeof(b), LV_SYMBOL_WARNING " %s", TR(prot));
       set_label(lbl_prot, b);
     } else {
       set_label(lbl_prot, "");
@@ -134,7 +135,7 @@ void battery_timer_cb(lv_timer_t *t) {
 
   /* diagnostics */
   if (d.connected) {
-    snprintf(b, sizeof(b), "Services: %s\nLast data: %s", d.services[0] ? d.services : "-", d.last_frame[0] ? d.last_frame : "-");
+    snprintf(b, sizeof(b), TR("Services: %s\nLast data: %s"), d.services[0] ? d.services : "-", d.last_frame[0] ? d.last_frame : "-");
     set_label(lbl_debug, b);
   } else {
     set_label(lbl_debug, "Close the ECO-WORTHY app on your phone: the battery accepts only one connection.");

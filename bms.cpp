@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Battery BMS over BLE.
  *
  * Two protocols are supported, both used by ECO-WORTHY batteries:
@@ -64,20 +65,20 @@ static void hex_line(const uint8_t *d, size_t n, char *out, size_t out_len) {
 }
 
 const char *bms_protection_text(uint16_t b) {
-  if (b & 0x0400) return "Short circuit";
-  if (b & 0x0001) return "Cell overvoltage";
-  if (b & 0x0002) return "Cell undervoltage";
-  if (b & 0x0004) return "Pack overvoltage";
-  if (b & 0x0008) return "Pack undervoltage";
-  if (b & 0x0010) return "Charge overtemperature";
-  if (b & 0x0020) return "Charge undertemperature";
-  if (b & 0x0040) return "Discharge overtemperature";
-  if (b & 0x0080) return "Discharge undertemperature";
-  if (b & 0x0100) return "Charge overcurrent";
-  if (b & 0x0200) return "Discharge overcurrent";
-  if (b & 0x0800) return "BMS IC error";
-  if (b & 0x1000) return "MOSFET locked";
-  if (b) return "Protection active";
+  if (b & 0x0400) return N_("Short circuit");
+  if (b & 0x0001) return N_("Cell overvoltage");
+  if (b & 0x0002) return N_("Cell undervoltage");
+  if (b & 0x0004) return N_("Pack overvoltage");
+  if (b & 0x0008) return N_("Pack undervoltage");
+  if (b & 0x0010) return N_("Charge overtemperature");
+  if (b & 0x0020) return N_("Charge undertemperature");
+  if (b & 0x0040) return N_("Discharge overtemperature");
+  if (b & 0x0080) return N_("Discharge undertemperature");
+  if (b & 0x0100) return N_("Charge overcurrent");
+  if (b & 0x0200) return N_("Discharge overcurrent");
+  if (b & 0x0800) return N_("BMS IC error");
+  if (b & 0x1000) return N_("MOSFET locked");
+  if (b) return N_("Protection active");
   return NULL;
 }
 
@@ -330,7 +331,7 @@ static bool do_connect() {
   }
   if (client->isConnected()) client->disconnect();
 
-  set_status("Connecting to %s...", cfg.name);
+  set_status(TR("Connecting to %s..."), cfg.name);
   xSemaphoreTake(ble_conn_mtx, portMAX_DELAY);  // one BLE connection attempt at a time
   ble_pause_scan(true);  // scanning and connecting at the same time is unreliable
   vTaskDelay(pdMS_TO_TICKS(200));
@@ -338,7 +339,7 @@ static bool do_connect() {
   ble_pause_scan(false);
   xSemaphoreGive(ble_conn_mtx);
   if (!ok) {
-    set_status("Could not connect to %s. Is the phone app closed?", cfg.name);
+    set_status(TR("Could not connect to %s. Is the phone app closed?"), cfg.name);
     return false;
   }
 
@@ -378,19 +379,19 @@ static bool do_connect() {
     if (w && nfy && (w->canWrite() || w->canWriteNoResponse())) {
       ew_write = w;
       proto = PROTO_EW;
-      USBSerial.printf("BMS: ECO-WORTHY characteristics found in service %s\n", svc->getUUID().toString().c_str());
+      serf("BMS: ECO-WORTHY characteristics found in service %s\n", svc->getUUID().toString().c_str());
       break;
     }
   }
-  if (!ew_write) USBSerial.printf("BMS: %d writable characteristics to try (both protocols)\n", write_chr_count);
+  if (!ew_write) serf("BMS: %d writable characteristics to try (both protocols)\n", write_chr_count);
 
   xSemaphoreTake(bms_mtx, portMAX_DELAY);
   bms.connected = true;
   strlcpy(bms.services, services, sizeof(bms.services));
   xSemaphoreGive(bms_mtx);
 
-  if (ew_write || write_chr_count) set_status("Connected to %s - asking for data...", cfg.name);
-  else set_status("Connected to %s, but it accepts no requests - see Serial log", cfg.name);
+  if (ew_write || write_chr_count) set_status(TR("Connected to %s - asking for data..."), cfg.name);
+  else set_status(TR("Connected to %s, but it accepts no requests - see Serial log"), cfg.name);
   return true;
 }
 
@@ -402,7 +403,7 @@ static void bms_task(void *arg) {
     if (!feat_bms) {  // switched off in Settings
       if (client && client->isConnected()) {
         client->disconnect();
-        set_status("Battery reading is switched off in Settings");
+        set_status(TR("Battery reading is switched off in Settings"));
       }
       had_target = false;
       vTaskDelay(pdMS_TO_TICKS(500));
@@ -422,7 +423,7 @@ static void bms_task(void *arg) {
       bms.connected = false;
       xSemaphoreGive(bms_mtx);
       if (was) {
-        set_status("Connection lost - retrying...");
+        set_status(TR("Connection lost - retrying..."));
         next_try = millis() + 3000;
       }
     }
@@ -474,8 +475,8 @@ static void bms_task(void *arg) {
         LOCK();
         c = bms_cfg;
         UNLOCK();
-        if (proto == PROTO_EW) set_status("Connected to %s (ECO-WORTHY protocol)", c.name);
-        else set_status("Connected to %s (JBD protocol, %s)", c.name,
+        if (proto == PROTO_EW) set_status(TR("Connected to %s (ECO-WORTHY protocol)"), c.name);
+        else set_status(TR("Connected to %s (JBD protocol, %s)"), c.name,
                         write_chr[write_chr_idx]->getUUID().toString().c_str());
       } else if (!answered && proto == PROTO_PROBE_JBD && ++tries >= 3) {  // try the next characteristic
         tries = 0;
@@ -486,9 +487,9 @@ static void bms_task(void *arg) {
           LOCK();
           c = bms_cfg;
           UNLOCK();
-          set_status("%s answers nothing we understand - see Serial log", c.name);
+          set_status(TR("%s answers nothing we understand - see Serial log"), c.name);
         } else {
-          USBSerial.printf("BMS: trying characteristic %d of %d\n", write_chr_idx + 1, write_chr_count);
+          serf("BMS: trying characteristic %d of %d\n", write_chr_idx + 1, write_chr_count);
         }
       }
     }
@@ -501,9 +502,9 @@ void bms_start() {
   bms_mtx = xSemaphoreCreateMutex();
   memset(&bms, 0, sizeof(bms));
 #if ENABLE_BMS
-  strlcpy(bms.status, "No battery chosen", sizeof(bms.status));
+  strlcpy(bms.status, TR("No battery chosen"), sizeof(bms.status));
   xTaskCreatePinnedToCore(bms_task, "bms", 4096, NULL, 1, NULL, 0);
 #else
-  strlcpy(bms.status, "Battery connection is switched off (ENABLE_BMS 0 in app.h)", sizeof(bms.status));
+  strlcpy(bms.status, TR("Battery connection is switched off (ENABLE_BMS 0 in app.h)"), sizeof(bms.status));
 #endif
 }

@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Victron BLE Instant Readout.
    Needs "Instant readout via Bluetooth" enabled in VictronConnect,
    and the device's encryption key (Product info -> Encryption data). */
@@ -26,18 +27,18 @@ struct BitReader {
 
 const char *vic_type_name(uint8_t t) {
   switch (t) {
-    case 0x01: return "Solar charger";
-    case 0x02: return "Battery monitor";
-    case 0x03: return "Inverter";
-    case 0x04: return "DC-DC";
-    case 0x05: return "Smart Lithium";
-    case 0x06: return "Inverter RS";
-    case 0x08: return "AC charger";
-    case 0x09: return "Battery protect";
-    case 0x0A: return "Lynx BMS";
-    case 0x0C: return "VE.Bus";
-    case 0x0D: return "DC energy meter";
-    default: return "Victron device";
+    case 0x01: return N_("Solar charger");
+    case 0x02: return N_("Battery monitor");
+    case 0x03: return N_("Inverter");
+    case 0x04: return N_("DC-DC");
+    case 0x05: return N_("Smart Lithium");
+    case 0x06: return N_("Inverter RS");
+    case 0x08: return N_("AC charger");
+    case 0x09: return N_("Battery protect");
+    case 0x0A: return N_("Lynx BMS");
+    case 0x0C: return N_("VE.Bus");
+    case 0x0D: return N_("DC energy meter");
+    default: return N_("Victron device");
   }
 }
 
@@ -47,22 +48,22 @@ bool vic_supported(uint8_t t) {
 
 const char *vic_state_name(uint8_t s) {
   switch (s) {
-    case 0: return "Off";
-    case 1: return "Low power";
-    case 2: return "Fault";
-    case 3: return "Bulk";
-    case 4: return "Absorption";
-    case 5: return "Float";
-    case 6: return "Storage";
-    case 7: return "Equalize";
-    case 9: return "Inverting";
-    case 11: return "Power supply";
-    case 245: return "Starting up";
-    case 246: return "Rep. absorption";
-    case 247: return "Recondition";
-    case 248: return "BatterySafe";
-    case 252: return "Ext. control";
-    default: return "Unknown";
+    case 0: return N_("Off");
+    case 1: return N_("Low power");
+    case 2: return N_("Fault");
+    case 3: return N_("Bulk");
+    case 4: return N_("Absorption");
+    case 5: return N_("Float");
+    case 6: return N_("Storage");
+    case 7: return N_("Equalize");
+    case 9: return N_("Inverting");
+    case 11: return N_("Power supply");
+    case 245: return N_("Starting up");
+    case 246: return N_("Rep. absorption");
+    case 247: return N_("Recondition");
+    case 248: return N_("BatterySafe");
+    case 252: return N_("Ext. control");
+    default: return N_("Unknown");
   }
 }
 
@@ -71,16 +72,16 @@ bool vic_active_state(uint8_t s) {
 }
 
 const char *vic_alarm_text(uint16_t a) {
-  if (a & 0x1000) return "Short circuit";
-  if (a & 0x0100) return "Overload";
-  if (a & 0x0001) return "Low battery";
-  if (a & 0x0002) return "High battery";
-  if (a & 0x0040) return "High temp";
-  if (a & 0x0020) return "Low temp";
-  if (a & 0x0200) return "DC ripple";
-  if (a & 0x0400) return "Low AC volt.";
-  if (a & 0x0800) return "High AC volt.";
-  if (a) return "Alarm";
+  if (a & 0x1000) return N_("Short circuit");
+  if (a & 0x0100) return N_("Overload");
+  if (a & 0x0001) return N_("Low battery");
+  if (a & 0x0002) return N_("High battery");
+  if (a & 0x0040) return N_("High temp");
+  if (a & 0x0020) return N_("Low temp");
+  if (a & 0x0200) return N_("DC ripple");
+  if (a & 0x0400) return N_("Low AC volt.");
+  if (a & 0x0800) return N_("High AC volt.");
+  if (a) return N_("Alarm");
   return NULL;
 }
 
@@ -92,11 +93,11 @@ bool vic_fresh(const VicData &d, uint32_t now) {
 }
 
 const char *vic_status(const VicData &d, uint8_t type, uint32_t now) {
-  if (!d.last_seen) return "Not heard yet";
-  if (now - d.last_seen >= VIC_STALE_MS) return "No signal";
-  if (d.key_bad) return "Wrong key";
-  if (!vic_supported(type)) return "Type not supported";
-  return "OK";
+  if (!d.last_seen) return N_("Not heard yet");
+  if (now - d.last_seen >= VIC_STALE_MS) return N_("No signal");
+  if (d.key_bad) return N_("Wrong key");
+  if (!vic_supported(type)) return N_("Type not supported");
+  return N_("OK");
 }
 
 void vic_clear_data(VicData &v) {

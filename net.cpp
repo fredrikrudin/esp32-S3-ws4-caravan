@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Network task (core 0, never touches LVGL): WiFi, NTP, Open-Meteo weather.
    It also does all flash writes the UI asks for, so they happen in one place. */
 #include "app.h"
@@ -27,7 +28,7 @@ static int http_get(const String &url, String &body) {
 }
 
 static void do_scan() {
-  set_wifi_status("Scanning...");
+  set_wifi_status(TR("Scanning..."));
   int n = WiFi.scanNetworks();
 
   char saved[33];
@@ -67,9 +68,9 @@ static void do_scan() {
   UNLOCK();
 
   if (WiFi.status() == WL_CONNECTED)
-    set_wifi_status("Connected to %s\nIP %s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+    set_wifi_status(TR("Connected to %s\nIP %s"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
   else
-    set_wifi_status("Found %d networks", count);
+    set_wifi_status(TR("Found %d networks"), count);
 }
 
 static void do_geocode() {
@@ -96,25 +97,25 @@ static void do_geocode() {
   for (int i = (int)strlen(country) - 1; i >= 0 && country[i] == ' '; i--) country[i] = 0;
   if (!name[0]) return;
 
-  USBSerial.printf("Geocode: name='%s' country='%s'\n", name, country);
-  set_loc_status("Looking up %s...", city);
+  serf("Geocode: name='%s' country='%s'\n", name, country);
+  set_loc_status(TR("Looking up %s..."), city);
 
   String url = String("http://geocoding-api.open-meteo.com/v1/search?count=10&language=en&format=json&name=") + url_encode(name);
   String body;
   int code = http_get(url, body);
   if (code != HTTP_CODE_OK) {
-    set_loc_status("Lookup failed (error %d) - try again", code);
+    set_loc_status(TR("Lookup failed (error %d) - try again"), code);
     return;
   }
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, body);
   if (err) {
     USBSerial.printf("Geocode JSON error: %s\n", err.c_str());
-    set_loc_status("Lookup failed (bad response)");
+    set_loc_status(TR("Lookup failed (bad response)"));
     return;
   }
   JsonArray results = doc["results"].as<JsonArray>();
-  USBSerial.printf("Geocode: %u results\n", (unsigned)results.size());
+  serf("Geocode: %u results\n", (unsigned)results.size());
 
   JsonObject r;
   for (JsonObject c : results) {
@@ -124,8 +125,8 @@ static void do_geocode() {
     }
   }
   if (r.isNull()) {
-    if (country[0]) set_loc_status("Not found: %s in %s", name, country);
-    else set_loc_status("Not found: %s", name);
+    if (country[0]) set_loc_status(TR("Not found: %s in %s"), name, country);
+    else set_loc_status(TR("Not found: %s"), name);
     return;
   }
 
@@ -147,7 +148,7 @@ static void do_geocode() {
   prefs.putFloat("lon", lon);
   prefs.putBool("hasloc", true);
 
-  set_loc_status("Location: %s", place);
+  set_loc_status(TR("Location: %s"), place);
   cmd_weather = true;
 }
 
@@ -221,6 +222,10 @@ static bool do_weather() {
 
 /* Flash writes requested by the UI */
 static void save_pending() {
+  if (cmd_save_lang) {
+    prefs.putString("lang", lang_pending);
+    cmd_save_lang = false;  // cleared after the write: the UI restarts once it sees this
+  }
   if (cmd_save_ruuvi) {
     cmd_save_ruuvi = false;
     RuuviCfg copy[MAX_RUUVI];
@@ -236,6 +241,22 @@ static void save_pending() {
     copy = relay_cfg;
     UNLOCK();
     prefs.putBytes("relay", &copy, sizeof(copy));
+  }
+  if (cmd_save_rhist) {
+    cmd_save_rhist = false;
+    static RuuviHist copy[MAX_RUUVI];
+    LOCK();
+    memcpy(copy, ruuvi_hist, sizeof(copy));
+    UNLOCK();
+    prefs.putBytes("rhist", copy, sizeof(copy));
+  }
+  if (cmd_save_splash) {
+    cmd_save_splash = false;
+    SplashCfg copy;
+    LOCK();
+    copy = splash_cfg;
+    UNLOCK();
+    prefs.putBytes("splash", &copy, sizeof(copy));
   }
   if (cmd_save_sched) {
     cmd_save_sched = false;
@@ -259,6 +280,7 @@ static void save_pending() {
     prefs.putUChar("csvmin", csv_interval_min);
     prefs.putUChar("battmode", feat_battmode ? 1 : 0);
     prefs.putUChar("battpct", batt_shutdown_pct);
+    prefs.putBool("serial", feat_serial);
   }
   if (cmd_save_shelly) {
     cmd_save_shelly = false;
@@ -324,16 +346,16 @@ static void wifi_event(arduino_event_id_t event, arduino_event_info_t info) {
 /* Plain-language version of the most common reasons */
 static const char *disc_reason_text(uint8_t r) {
   switch (r) {
-    case 0: return "no answer";
-    case WIFI_REASON_NO_AP_FOUND: return "network not found";
+    case 0: return N_("no answer");
+    case WIFI_REASON_NO_AP_FOUND: return N_("network not found");
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_HANDSHAKE_TIMEOUT:
-    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "wrong password or handshake timeout";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return N_("wrong password or handshake timeout");
     case WIFI_REASON_AUTH_EXPIRE:
     case WIFI_REASON_ASSOC_EXPIRE:
-    case WIFI_REASON_BEACON_TIMEOUT: return "weak signal / timeout";
+    case WIFI_REASON_BEACON_TIMEOUT: return N_("weak signal / timeout");
     case WIFI_REASON_ASSOC_FAIL:
-    case WIFI_REASON_CONNECTION_FAIL: return "router refused the connection";
+    case WIFI_REASON_CONNECTION_FAIL: return N_("router refused the connection");
     default: return WiFi.disconnectReasonName((wifi_err_reason_t)r);
   }
 }
@@ -345,7 +367,7 @@ bool net_wait_wifi_init(uint32_t ms) {
 }
 
 static void net_task(void *arg) {
-  USBSerial.printf("Before WiFi init: internal heap free %u, largest block %u\n",
+  serf("Before WiFi init: internal heap free %u, largest block %u\n",
                    heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                    heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   WiFi.persistent(false);  // we store credentials ourselves; avoid extra flash writes
@@ -386,15 +408,22 @@ static void net_task(void *arg) {
       WiFi.begin(ssid, pass);
       connect_started = millis() | 1;
       was_up = false;
-      set_wifi_status("Connecting to %s...", ssid);
+      set_wifi_status(TR("Connecting to %s..."), ssid);
     }
 
     save_pending();
 
     bool up = (WiFi.status() == WL_CONNECTED);
+    {
+      int rssi = up ? WiFi.RSSI() : 0;  // for the WiFi indicator on the home page
+      LOCK();
+      g.wifi_up = up;
+      g.wifi_rssi = rssi;
+      UNLOCK();
+    }
     if (up && !was_up) {
-      set_wifi_status("Connected to %s\nIP %s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-      USBSerial.printf("WiFi connected. Internal heap free %u, largest block %u\n",
+      set_wifi_status(TR("Connected to %s\nIP %s"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+      serf("WiFi connected. Internal heap free %u, largest block %u\n",
                        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
       connect_started = 0;
@@ -405,12 +434,12 @@ static void net_task(void *arg) {
       }
       cmd_weather = true;
     } else if (!up && was_up) {
-      set_wifi_status("Connection lost - reconnecting...");
+      set_wifi_status(TR("Connection lost - reconnecting..."));
     }
     was_up = up;
 
     if (!up && connect_started && millis() - connect_started > 20000) {
-      set_wifi_status("Could not connect: %s (reason %u)", disc_reason_text(last_disc_reason), last_disc_reason);
+      set_wifi_status(TR("Could not connect: %s (reason %u)"), TR(disc_reason_text(last_disc_reason)), last_disc_reason);
       connect_started = 0;
       ble_pause_scan(false);  // don't leave Bluetooth paused; WiFi keeps retrying by itself
     }
@@ -418,7 +447,7 @@ static void net_task(void *arg) {
     if (cmd_geocode) {
       cmd_geocode = false;
       if (up) do_geocode();
-      else set_loc_status("Connect to WiFi first");
+      else set_loc_status(TR("Connect to WiFi first"));
     }
 
     LOCK();

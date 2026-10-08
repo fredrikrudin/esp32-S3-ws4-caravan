@@ -1,3 +1,4 @@
+// esp32-S3-ws4-caravan v1.0
 /* Board hardware: IO expander, touch, RGB display, LVGL driver setup, backlight */
 #include "app.h"
 #include "Arduino_GFX_Library.h"
@@ -94,17 +95,17 @@ static void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
 }
 
 static void boot_i2c_scan() {
-  USBSerial.println("Scanning I2C bus...");
+  serln("Scanning I2C bus...");
   int n = 0;
   for (uint8_t address = 1; address < 127; address++) {
     Wire.beginTransmission(address);
     if (Wire.endTransmission() == 0) {
-      USBSerial.printf("I2C device found at address 0x%02X\n", address);
+      serf("I2C device found at address 0x%02X\n", address);
       n++;
       if (address == GT911_SLAVE_ADDRESS_L || address == GT911_SLAVE_ADDRESS_H) gt911_i2c_addr = address;
     }
   }
-  USBSerial.println(n ? "I2C scan completed" : "No I2C devices found");
+  serln(n ? "I2C scan completed" : "No I2C devices found");
 }
 
 static bool init_gt911(int sda_pin, int scl_pin) {
@@ -117,7 +118,7 @@ static bool init_gt911(int sda_pin, int scl_pin) {
   }
   GT911.setPins(-1, -1);
   if (GT911.begin(Wire, gt911_i2c_addr, sda_pin, scl_pin)) {
-    USBSerial.printf("GT911 initialized at 0x%02X\n", gt911_i2c_addr);
+    serf("GT911 initialized at 0x%02X\n", gt911_i2c_addr);
     return true;
   }
   USBSerial.printf("Failed to initialize GT911 at 0x%02X\n", gt911_i2c_addr);
@@ -133,7 +134,7 @@ void board_init() {
   gt911_available = init_gt911(WS_CH32_IO::DEFAULT_I2C_SDA, WS_CH32_IO::DEFAULT_I2C_SCL);
   if (gt911_available) {
     GT911.setHomeButtonCallback([](void *user_data) {
-      USBSerial.println("Home button pressed!");
+      serln("Home button pressed!");
     },
                                 NULL);
     GT911.setMaxTouchPoint(1);
@@ -147,7 +148,7 @@ void board_init() {
   uint32_t screen_h = gfx->height();
 
   lv_init();
-  USBSerial.printf("Internal heap after display init: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  serf("Internal heap after display init: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   /* LVGL draw buffers in PSRAM, so internal RAM stays free for WiFi and BLE */
   size_t buf_px = screen_w * 60;
