@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: esp32-S3-ws4-caravan\n"
-"POT-Creation-Date: 2026-10-08 18:55+0000\n"
+"POT-Creation-Date: 2026-10-08 19:06+0000\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -76,11 +76,11 @@ msgstr ""
 msgid "SD card not available"
 msgstr ""
 
-#: app.h:86
+#: app.h:89
 msgid "Press Scan"
 msgstr ""
 
-#: app.h:87
+#: app.h:90
 msgid "No networks found"
 msgstr ""
 
@@ -1131,7 +1131,7 @@ msgstr ""
 msgid "Yes"
 msgstr ""
 
-#: ui_settings.cpp:593 ui_settings.cpp:1032
+#: ui_settings.cpp:593 ui_settings.cpp:1033
 msgid "Restart"
 msgstr ""
 
@@ -1139,7 +1139,7 @@ msgstr ""
 msgid "Restart the board now?"
 msgstr ""
 
-#: ui_settings.cpp:597 ui_settings.cpp:1033
+#: ui_settings.cpp:597 ui_settings.cpp:1034
 msgid "Shut down"
 msgstr ""
 
@@ -1150,7 +1150,7 @@ msgid ""
 "The board goes to sleep and only the reset button (or cutting the power) starts it again."
 msgstr ""
 
-#: ui_settings.cpp:601 ui_settings.cpp:1034
+#: ui_settings.cpp:601 ui_settings.cpp:1035
 msgid "Full reset"
 msgstr ""
 
@@ -1473,11 +1473,11 @@ msgstr ""
 msgid "About"
 msgstr ""
 
-#: ui_settings.cpp:1030
+#: ui_settings.cpp:1031
 msgid "System"
 msgstr ""
 
-#: ui_settings.cpp:1040
+#: ui_settings.cpp:1041
 msgid "Each asks for confirmation first. Back up your settings to the card before a full reset."
 msgstr ""
 

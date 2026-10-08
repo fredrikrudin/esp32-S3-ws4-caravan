@@ -78,11 +78,11 @@ msgstr "Reläkortet svarar inte"
 msgid "SD card not available"
 msgstr "SD-kortet är inte tillgängligt"
 
-#: app.h:86
+#: app.h:89
 msgid "Press Scan"
 msgstr "Tryck på Sök"
 
-#: app.h:87
+#: app.h:90
 msgid "No networks found"
 msgstr "Inga nätverk hittades"
 
@@ -1153,7 +1153,7 @@ msgstr "Avbryt"
 msgid "Yes"
 msgstr "Ja"
 
-#: ui_settings.cpp:593 ui_settings.cpp:1032
+#: ui_settings.cpp:593 ui_settings.cpp:1033
 msgid "Restart"
 msgstr "Starta om"
 
@@ -1161,7 +1161,7 @@ msgstr "Starta om"
 msgid "Restart the board now?"
 msgstr "Starta om kortet nu?"
 
-#: ui_settings.cpp:597 ui_settings.cpp:1033
+#: ui_settings.cpp:597 ui_settings.cpp:1034
 msgid "Shut down"
 msgstr "Stäng av"
 
@@ -1175,7 +1175,7 @@ msgstr ""
 "\n"
 "Kortet går i viloläge och startar bara igen med reset-knappen (eller om strömmen bryts)."
 
-#: ui_settings.cpp:601 ui_settings.cpp:1034
+#: ui_settings.cpp:601 ui_settings.cpp:1035
 msgid "Full reset"
 msgstr "Fabriksåterställning"
 
@@ -1507,11 +1507,11 @@ msgstr "Av: bara problem (fel och varningar) skrivs till USB-serieporten. Loggen
 msgid "About"
 msgstr "Om"
 
-#: ui_settings.cpp:1030
+#: ui_settings.cpp:1031
 msgid "System"
 msgstr "System"
 
-#: ui_settings.cpp:1040
+#: ui_settings.cpp:1041
 msgid "Each asks for confirmation first. Back up your settings to the card before a full reset."
 msgstr "Var och en frågar först. Säkerhetskopiera inställningarna till kortet före en fabriksåterställning."
 

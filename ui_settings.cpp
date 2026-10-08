@@ -1024,7 +1024,8 @@ void build_settings_tab() {
                     "Version " FW_VERSION "  -  built " __DATE__ " " __TIME__ "\n"
                     "(c) Fredrik Rudin\n"
                     "github.com/fredrikrudin/esp32-S3-ws4-caravan\n"
-                    "med hjalp av claude.ai Opus 5");
+                    "Written with the help of Claude (Anthropic AI)\n"
+                    "License: CC BY-NC 4.0 - non-commercial use only");
 
   /* ---- System ---- */
   sec = make_section(p_sys, LV_SYMBOL_POWER "  System");

@@ -6,6 +6,9 @@
  * Every .cpp file includes this header. It holds the configuration,
  * the data types, the state shared between tasks, and the functions
  * each module offers to the others.
+ *
+ * Copyright (c) 2026 Fredrik Rudin - CC BY-NC 4.0, see LICENSE.md
+ * Written with the help of Claude (Anthropic's AI).
  */
 
 #include <Arduino.h>

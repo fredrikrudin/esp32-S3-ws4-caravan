@@ -3,6 +3,8 @@
 
 **Version 1.0** - the first release. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
+[![CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE.md) Free for non-commercial use - see [License](#license). Written with the help of Claude (Anthropic's AI).
+
 See **[BOARD_NOTES.md](BOARD_NOTES.md)** for hard-won notes about this board: SD card wiring, memory limits, LVGL 8 pitfalls and the BLE protocols used here.
 
 
@@ -279,3 +281,15 @@ restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly
 | Relays show "No answer from PCF8574" | Wrong address (run the I2C scan), wiring, or power |
 | Relays switch the wrong way | Toggle *Active low* in Settings |
 | Image shifted down (tab bar too low) | The RGB panel lost sync, usually at startup. Press reset. The pixel clock is set to 12 MHz in `board.cpp` to reduce it; bounce buffers would fix it properly but need a newer GFX Library for Arduino |
+
+## License
+
+Copyright (c) 2026 Fredrik Rudin. Licensed under
+[Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/):
+you may use, share and change it for non-commercial purposes, with credit to the author.
+Selling it, or devices running it, needs the author's permission. Details and the
+third-party licenses are in [LICENSE.md](LICENSE.md).
+
+This code was written with the help of **Claude**, an AI model by
+[Anthropic](https://www.anthropic.com), under the author's direction and tested on the
+real hardware by the author.

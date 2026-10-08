@@ -15,6 +15,9 @@ Everything below "Development builds" is in this release. New since the last bui
   as well. The web page's `/log` and the SD card log always get everything. The switch is
   saved and read first thing at start-up, so the boot lines follow it; ESP-IDF's own
   messages follow it too. **Log memory, CPU and battery** moved here from Power.
+- License: Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0), in
+  `LICENSE.md`, the README, the main source files and Settings → Device → About,
+  with a note that the code was written with the help of Claude (Anthropic's AI).
 - Version 1.0, with the version on the first line of every file and
   `tools/set_version.py` to change it everywhere.
 - New README screenshots, rendered by the firmware's own UI code with LVGL on a PC
