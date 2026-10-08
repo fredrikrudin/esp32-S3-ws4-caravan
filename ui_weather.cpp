@@ -56,7 +56,16 @@ void build_weather_tab() {
     lv_label_set_text(fc_temp[i], "");
   }
 
-  lbl_updated = make_grey_label(tab_weather);
+  /* when it was fetched, and a button to fetch it now */
+  row = make_row(tab_weather, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(row, 16, 0);
+  lbl_updated = make_grey_label(row);
+  lv_obj_t *btn = make_btn(row, LV_SYMBOL_REFRESH " Refresh", [](lv_event_t *e) {
+    if (!g.has_loc) return;
+    cmd_weather = true;  // the network task fetches it within a moment
+    lv_label_set_text(lbl_updated, "Updating weather...");
+  });
+  lv_obj_set_height(btn, 36);
 }
 
 static void show_weather(const Weather &w) {

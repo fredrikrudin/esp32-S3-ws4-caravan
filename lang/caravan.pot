@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: esp32-S3-ws4-caravan\n"
-"POT-Creation-Date: 2026-10-08 18:23+0000\n"
+"POT-Creation-Date: 2026-10-08 18:55+0000\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -422,12 +422,12 @@ msgstr ""
 msgid "Connect to WiFi first"
 msgstr ""
 
-#: power.cpp:136
+#: power.cpp:138
 msgid "Battery empty - shutting down"
 msgstr ""
 
 #, c-format
-#: power.cpp:201
+#: power.cpp:203
 msgid "Running on battery  -  %d%%  (%.2f V)"
 msgstr ""
 
@@ -550,7 +550,7 @@ msgstr ""
 msgid "Not read yet"
 msgstr ""
 
-#: state.cpp:72 ui_weather.cpp:22 ui_weather.cpp:131
+#: state.cpp:72 ui_weather.cpp:22 ui_weather.cpp:140
 msgid "No location set"
 msgstr ""
 
@@ -721,52 +721,52 @@ msgstr ""
 msgid "Relays"
 msgstr ""
 
-#: ui_history.cpp:22
+#: ui_history.cpp:24
 msgid "now"
 msgstr ""
 
-#: ui_history.cpp:48
+#: ui_history.cpp:50
 msgid "Last 7 days"
 msgstr ""
 
-#: ui_history.cpp:48
+#: ui_history.cpp:50
 msgid "Last 24 hours"
 msgstr ""
 
-#: ui_history.cpp:49
+#: ui_history.cpp:51
 msgid "(kWh per day)"
 msgstr ""
 
-#: ui_history.cpp:49
+#: ui_history.cpp:51
 msgid "(Wh per hour)"
 msgstr ""
 
 #, c-format
-#: ui_history.cpp:51 ui_history.cpp:53
+#: ui_history.cpp:53 ui_history.cpp:55
 msgid "%.2f kWh"
 msgstr ""
 
-#: ui_history.cpp:98
+#: ui_history.cpp:104
 msgid "Back"
 msgstr ""
 
-#: ui_history.cpp:100
+#: ui_history.cpp:106
 msgid "24 hours"
 msgstr ""
 
-#: ui_history.cpp:101
+#: ui_history.cpp:107
 msgid "7 days"
 msgstr ""
 
-#: ui_history.cpp:140 ui_home.cpp:276 ui_home.cpp:282
+#: ui_history.cpp:146 ui_home.cpp:276 ui_home.cpp:282
 msgid "Solar"
 msgstr ""
 
-#: ui_history.cpp:142
+#: ui_history.cpp:148
 msgid "Consumption"
 msgstr ""
 
-#: ui_history.cpp:144
+#: ui_history.cpp:150
 msgid "Battery now"
 msgstr ""
 
@@ -1640,20 +1640,28 @@ msgid ""
 "in Settings"
 msgstr ""
 
+#: ui_weather.cpp:63
+msgid "Refresh"
+msgstr ""
+
+#: ui_weather.cpp:66
+msgid "Updating weather..."
+msgstr ""
+
 #, c-format
-#: ui_weather.cpp:72
+#: ui_weather.cpp:81
 msgid "Feels %.1f°   Humidity %d%%   Wind %.1f m/s"
 msgstr ""
 
-#: ui_weather.cpp:86
+#: ui_weather.cpp:95
 msgid "Updated %H:%M"
 msgstr ""
 
-#: ui_weather.cpp:95
+#: ui_weather.cpp:104
 msgid "Waiting for time sync"
 msgstr ""
 
-#: ui_weather.cpp:106
+#: ui_weather.cpp:115
 msgid "(UTC)"
 msgstr ""
 

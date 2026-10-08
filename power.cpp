@@ -16,9 +16,11 @@
 #include "WS_CH32_IO.h"
 
 static bool saving_now = false;
+volatile bool screen_asleep = false;
 
 /* Called by the screen saver when it starts and stops */
-void power_set_saving(bool screen_asleep) {
+void power_set_saving(bool asleep) {
+  screen_asleep = asleep;  // the weather is not fetched while nobody looks
   if (!feat_powersave) {
     if (saving_now) {  // the setting was switched off while asleep
       setCpuFrequencyMhz(240);
@@ -26,11 +28,11 @@ void power_set_saving(bool screen_asleep) {
     }
     return;
   }
-  if (screen_asleep == saving_now) return;
-  saving_now = screen_asleep;
+  if (asleep == saving_now) return;
+  saving_now = asleep;
   /* 80 MHz is the lowest that keeps WiFi and Bluetooth working */
-  setCpuFrequencyMhz(screen_asleep ? 80 : 240);
-  logf("Power: CPU at %d MHz", screen_asleep ? 80 : 240);
+  setCpuFrequencyMhz(asleep ? 80 : 240);
+  logf("Power: CPU at %d MHz", asleep ? 80 : 240);
 }
 
 bool power_saving_active() {

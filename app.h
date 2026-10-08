@@ -112,6 +112,7 @@ LV_FONT_DECLARE(font_clock_96)
 #define MAX_RUUVI 3           // RuuviTags that can be added and named
 #define MAX_VIC 6             // Victron devices that can be added
 #define MAX_VIC_SEEN 12       // Victron devices remembered for the "Add" list
+#define WEATHER_EVERY_MS (60UL * 60 * 1000)  // weather refresh while the screen is awake
 #define VIC_STALE_MS 60000UL  // no Victron data for this long = "No signal"
 #define MAX_RELAYS 8          // PCF8574 has 8 outputs
 #define MAX_ALARMS 8          // messages kept at once
@@ -488,6 +489,7 @@ bool sw6106_present();
 
 /* power.cpp */
 void power_set_saving(bool screen_asleep);
+extern volatile bool screen_asleep;  // the screen saver is on (set whether or not the CPU is slowed)
 bool power_saving_active();
 void perf_service();            // call from loop()
 void power_battery_service();   // call from loop(): watches the onboard cell

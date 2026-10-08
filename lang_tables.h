@@ -381,6 +381,8 @@ static const TrPair tr_sv[] = {
   { "%s\n%s  -  OK (%d dBm)", "%s\n%s  -  OK (%d dBm)" },
   { "Loading weather...", "Hämtar väder..." },
   { "Set a location\nin Settings", "Välj en plats\ni Inställningar" },
+  { "Refresh", "Uppdatera" },
+  { "Updating weather...", "Hämtar väder..." },
   { "Feels %.1f°   Humidity %d%%   Wind %.1f m/s", "Känns som %.1f°   Fukt %d%%   Vind %.1f m/s" },
   { "Updated %H:%M", "Uppdaterad %H:%M" },
   { "Waiting for time sync", "Väntar på tidssynkronisering" },
@@ -426,6 +428,6 @@ static const TrPair tr_sv[] = {
 };
 
 static const BuiltIn builtin[] = {
-  { "sv", "Svenska", tr_sv, 420 },
+  { "sv", "Svenska", tr_sv, 422 },
 };
 static const int BUILTIN_COUNT = 1;

@@ -453,10 +453,12 @@ static void net_task(void *arg) {
     LOCK();
     bool has_loc = g.has_loc;
     UNLOCK();
-    if (up && has_loc && (cmd_weather || (int32_t)(millis() - next_weather) >= 0)) {
+    /* every hour while the screen is awake (at once on waking if one is due), on
+       request from the Refresh button, and a minute after a failed attempt */
+    if (up && has_loc && (cmd_weather || (!screen_asleep && (int32_t)(millis() - next_weather) >= 0))) {
       cmd_weather = false;
       bool ok = do_weather();
-      next_weather = millis() + (ok ? 15UL * 60 * 1000 : 60UL * 1000);  // 15 min, retry after 1 min
+      next_weather = millis() + (ok ? WEATHER_EVERY_MS : 60UL * 1000);
       if (!ok) USBSerial.println("Weather fetch failed");
     }
 

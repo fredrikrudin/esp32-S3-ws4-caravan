@@ -17,7 +17,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | ![Alarm](screen-alarm.png) | ![History](screen-history.png) |
 | **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
 | ![Ruuvi](screen-ruuvi.png) | ![Weather](screen-weather.png) |
-| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | **Weather** – now, today's high and low, and three days ahead |
+| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | **Weather** – now, today's high and low, and three days ahead; updated hourly, or now with Refresh |
 | ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
 | **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
 | ![Settings: Connect](screen-settings.png) | ![Settings: Sensors](screen-settings-sensors.png) |
@@ -37,7 +37,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | **⌂ Start** | Large clock and date between two gradient gauges: battery on the left with Time To Go, solar on the right. Ten-minute graphs under each, then inside and outside temperature and how many relays are on. A warning banner appears across the top when something needs attention |
 | **Power** | The battery in the middle, chargers on the left, the AC side on the right, DC loads below. Each connection lights up in its device's colour while energy flows, and the solar, battery and loads tiles carry a ten-minute graph. Tap any tile for the history: solar and consumption per hour over 24 hours, or per day over 7 days |
 | **Ruuvi** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery and signal, and a chart of the last 7 days per tag: each day's low (blue) and high (orange), in the colours of Victron VRM. The 7-day high and low sit under the reading. The history is kept in flash, so it survives a restart |
-| **Weather** | Current conditions, high and low, feels-like, humidity, wind and a 3-day forecast (Open-Meteo) |
+| **Weather** | Current conditions, high and low, feels-like, humidity, wind and a 3-day forecast (Open-Meteo). Fetched every hour while the screen is awake, never while the screen saver is on (it catches up as soon as the screen wakes), and at once with the **Refresh** button. A failed fetch is tried again after a minute |
 | **Shelly** | Up to 4 plugs or switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): power, on/off, and the reason when something fails. Hidden until a device is added |
 | **Relays** | Up to 8 relays on a PCF8574, each an Off \| On control in the Victron switch-pane style. Hidden until a board answers |
 | **⚙ Settings** | Four sub-tabs: Connect, Sensors, Control, Device |

@@ -22,6 +22,9 @@ Everything below "Development builds" is in this release. New since the last bui
 - Fix: the History chart labelled its 24 hourly bars -23h ... -17h; it now runs -23h ... now.
 - History: the totals fit their boxes ("3.37 kWh" was cut off) and the scale on the left shows.
 - Shelly: the power reading no longer overlaps the status line under it.
+- Weather: fetched every hour while the screen is awake (was every 15 minutes, always),
+  not at all while the screen saver is on, and straight away when the screen wakes if an
+  update is due. A **Refresh** button under the forecast fetches it at once.
 
 What 1.0 contains, in short: Home, Power (Victron), Ruuvi with 7-day history, Weather,
 Battery (BMS, experimental), Shelly, Relays and Settings tabs; schedules; alarms; web page
