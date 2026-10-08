@@ -18,7 +18,9 @@ static void chart_draw_cb(lv_event_t *e) {
   if (dsc->id != LV_CHART_AXIS_PRIMARY_X || !dsc->text) return;
 
   int n = daily ? HIST_DAYS : HIST_HOURS;
-  int ago = n - 1 - dsc->value;  // 0 = the period just finished
+  /* dsc->value is the label's number (0-6), not the bar's: spread over the bars */
+  int bar = (int)lroundf(dsc->value * (n - 1) / 6.0f);
+  int ago = n - 1 - bar;  // 0 = the period just finished
   if (ago == 0) lv_snprintf(dsc->text, dsc->text_length, TR("now"));
   else lv_snprintf(dsc->text, dsc->text_length, "-%d%s", ago, daily ? "d" : "h");
 }
@@ -79,7 +81,11 @@ static lv_obj_t *summary_box(lv_obj_t *parent, const char *title, uint32_t color
   lv_label_set_text(t, title);
   lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
   *value = lv_label_create(box);
+#if LV_FONT_MONTSERRAT_28
+  lv_obj_set_style_text_font(*value, ui_font(&lv_font_montserrat_28), 0);  // "12.34 kWh" fits the box
+#else
   lv_obj_set_style_text_font(*value, FONT_BIG, 0);
+#endif
   lv_obj_align(*value, LV_ALIGN_BOTTOM_LEFT, 0, 0);
   lv_label_set_text(*value, "--");
   return box;
@@ -121,8 +127,8 @@ void build_history_screen() {
 
   /* the bars */
   chart = lv_chart_create(hist_scr);
-  lv_obj_set_size(chart, 460, 230);
-  lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, 78);
+  lv_obj_set_size(chart, 418, 230);  // room on the left for the scale
+  lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, -6, 78);
   lv_chart_set_type(chart, LV_CHART_TYPE_BAR);
   lv_chart_set_div_line_count(chart, 5, 0);
   lv_obj_set_style_bg_color(chart, lv_color_hex(0x1B1F24), 0);

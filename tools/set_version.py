@@ -18,10 +18,10 @@ NAME = "esp32-S3-ws4-caravan"
 TAG = re.compile(re.escape(NAME) + r" v[0-9][0-9.]*")
 
 COMMENT = {".cpp": "// {}", ".h": "// {}", ".ino": "// {}", ".c": "// {}",
-           ".py": "# {}", ".po": "# {}", ".pot": "# {}", ".md": "<!-- {} -->"}
+           ".py": "# {}", ".po": "# {}", ".pot": "# {}", ".md": "<!-- {} -->", ".sh": "# {}"}
 
 def files():
-    for d in ("", "lang", "tools"):
+    for d in ("", "lang", "tools", "tools/screenshots"):
         for f in sorted(os.listdir(os.path.join(ROOT, d))):
             if os.path.splitext(f)[1] in COMMENT:
                 yield os.path.join(ROOT, d, f)

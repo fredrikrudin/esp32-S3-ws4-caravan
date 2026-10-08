@@ -29,7 +29,7 @@ void build_shelly_tab() {
   for (int i = 0; i < MAX_SHELLY; i++) {
     ShellyCard &c = cards[i];
     c.box = lv_obj_create(tab_shelly);
-    lv_obj_set_size(c.box, LV_PCT(100), 92);
+    lv_obj_set_size(c.box, LV_PCT(100), 100);
     lv_obj_set_style_pad_all(c.box, 12, 0);
     lv_obj_clear_flag(c.box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(c.box, LV_OBJ_FLAG_CLICKABLE);
@@ -42,7 +42,7 @@ void build_shelly_tab() {
 
     c.power = lv_label_create(c.box);
     lv_obj_set_style_text_font(c.power, FONT_BIG, 0);
-    lv_obj_align(c.power, LV_ALIGN_TOP_LEFT, 0, 22);
+    lv_obj_align(c.power, LV_ALIGN_TOP_LEFT, 0, 20);  // clear of the status line below
     lv_label_set_text(c.power, "--");
 
     c.sub = make_grey_label(c.box);

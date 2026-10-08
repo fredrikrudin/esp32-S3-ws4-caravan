@@ -16,14 +16,19 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | **Home** – clock between battery and solar gauges, ten-minute graphs under each, temperatures and relays below, WiFi signal top right | **Power** – the battery in the middle, chargers left, AC side right, DC loads below; each connection lights up in its own colour while energy flows |
 | ![Alarm](screen-alarm.png) | ![History](screen-history.png) |
 | **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
+| ![Ruuvi](screen-ruuvi.png) | ![Weather](screen-weather.png) |
+| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | **Weather** – now, today's high and low, and three days ahead |
 | ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
 | **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
-| ![Settings: Connect](screen-settings.png) | ![Settings: Device](screen-settings-device.png) |
-| **Settings → Connect** – WiFi, the web page and the weather location | **Settings → Device** – display, power saving, alarms, SD card |
-| ![Ruuvi](screen-ruuvi.png) | |
-| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | |
+| ![Settings: Connect](screen-settings.png) | ![Settings: Sensors](screen-settings-sensors.png) |
+| **Settings → Connect** – WiFi, the web page and the weather location | **Settings → Sensors** – RuuviTags, the battery BMS and Victron devices |
+| ![Settings: Control](screen-settings-control.png) | ![Settings: Device](screen-settings-device.png) |
+| **Settings → Control** – Shelly, schedules, relays and I2C | **Settings → Device** – language, display, power, alarms, SD card |
+| ![Settings: Debug](screen-settings-debug.png) | ![Home in Swedish](screen-home-sv.png) |
+| **Settings → Device → Debug** – the serial monitor switch and the performance log | **På svenska** – the same screens in Swedish |
 
-*Screens drawn to scale with example values.*
+*Screenshots rendered by the firmware's own UI code with LVGL on a PC, with example data
+(`tools/screenshots`).*
 
 ## Features
 
@@ -68,7 +73,6 @@ Temperature, Battery, Relays and Shelly each have an on/off switch: switching on
 its background work and takes its tab off the tab bar. Relays and Shelly also hide themselves
 when nothing is connected.
 
-![Settings: Sensors](screen-settings-sensors.png)
 
 ## Language
 
@@ -76,6 +80,8 @@ The display speaks **English** (the default) or **Swedish**, chosen under Settin
 Language. Changing it restarts the board, which takes a few seconds. Both are built into the
 firmware, so no SD card is needed. The web page stays in English, apart from the status texts
 it shares with the display.
+
+![Ruuvi in Swedish](screen-ruuvi-sv.png)
 
 Translations are ordinary gettext `.po` files in `lang/`, so they can be edited with
 [Poedit](https://poedit.net/), and new languages can be added the same way. See
@@ -170,8 +176,8 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `lang_tables.h` | The built-in translations, generated from `lang/*.po` by `tools/i18n.py` |
 | `font_latin1.c` | The Latin-1 letters (å ä ö é ü ...) missing from LVGL's built-in fonts, used when translated |
 | `lang/` | `caravan.pot` (the texts to translate) and one `.po` file per language |
-| `tools/` | `i18n.py` (template and built-in tables), `gen_font_latin1.py` (the fonts), `set_version.py` (the version, everywhere) |
-| `screen-*.png` | Screenshots for this README (`screen-ruuvi.png` is rendered by LVGL on a PC with example data) |
+| `tools/` | `i18n.py` (template and built-in tables), `gen_font_latin1.py` (the fonts), `set_version.py` (the version, everywhere), `screenshots/` (the README images, rendered on a PC) |
+| `screen-*.png` | Screenshots for this README, rendered by `tools/screenshots` |
 | `memory.md` | Notes and plan for lowering memory use and latency |
 | `CHANGELOG.md` | What changed in each version |
 | `lv_conf.example.h` | LVGL settings that suit this board and PSRAM-less boards alike |
