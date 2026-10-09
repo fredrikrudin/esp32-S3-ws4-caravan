@@ -2,9 +2,13 @@
 /* Power saving and a periodic performance log.
  *
  * Power saving does two things while the screen saver is showing: the CPU drops
- * from 240 to 80 MHz and the backlight is already off or dim. WiFi modem sleep
- * is on at all times, which costs nothing in responsiveness for a page that is
- * polled, not pushed.
+ * from 240 to 80 MHz and the backlight is already off or dim.
+ *
+ * The web server is left out of it. WiFi modem sleep is used only while the web
+ * server is switched off: in modem sleep the radio misses most multicast packets,
+ * so http://<name>.local/ stopped resolving and the page seemed to be gone while
+ * the screen saver showed. And a web request brings the CPU back to full speed
+ * for a minute, so the page is as quick as with the screen on.
  *
  * The performance log prints one line every 30 s: free memory, the largest
  * block, PSRAM, the LVGL pool and how much stack each task has left. It is the
@@ -17,6 +21,7 @@
 
 static bool saving_now = false;
 volatile bool screen_asleep = false;
+static uint32_t web_until = 0;  // full speed until then: someone is using the web page
 
 /* Called by the screen saver when it starts and stops */
 void power_set_saving(bool asleep) {
@@ -28,6 +33,7 @@ void power_set_saving(bool asleep) {
     }
     return;
   }
+  if (asleep && web_until && (int32_t)(millis() - web_until) < 0) asleep = false;  // the web page is in use
   if (asleep == saving_now) return;
   saving_now = asleep;
   /* 80 MHz is the lowest that keeps WiFi and Bluetooth working */
@@ -39,8 +45,37 @@ bool power_saving_active() {
   return saving_now;
 }
 
+/* Called for every web request. Under the screen saver the CPU goes back to
+   240 MHz; perf_service() slows it again a minute after the last request. */
+void power_web_activity() {
+  web_until = millis() + 60000;
+  if (!web_until) web_until = 1;
+  if (saving_now) {
+    setCpuFrequencyMhz(240);
+    saving_now = false;
+    logf("Power: CPU at 240 MHz while the web page is in use");
+  }
+}
+
+/* Modem sleep saves a little power but makes the board miss mDNS queries:
+   only while nobody can reach the web page anyway */
+void power_wifi_sleep_apply() {
+  static int last = -1;
+  bool sleep = !feat_web;
+  if (sleep == last) return;
+  last = sleep;
+  WiFi.setSleep(sleep);
+  logf("WiFi: modem sleep %s", sleep ? "on (web server off)" : "off (web server on)");
+}
+
 /* Called from loop() */
 void perf_service() {
+  /* the web page went quiet while the screen saver shows: slow down again */
+  if (web_until && (int32_t)(millis() - web_until) >= 0) {
+    web_until = 0;
+    if (screen_asleep) power_set_saving(true);
+  }
+
   static uint32_t next = 0;
   if (next && (int32_t)(millis() - next) < 0) return;
   next = millis() + 30000;

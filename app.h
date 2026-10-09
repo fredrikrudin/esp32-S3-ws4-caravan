@@ -95,7 +95,8 @@ LV_FONT_DECLARE(font_clock_96)
    web page and in the first log line. */
 #define FW_VERSION "1.0"
 
-#define MDNS_NAME "waveshare"   // web page at http://waveshare.local/
+#define MDNS_NAME "caravan"         // web page at http://caravan.local/
+#define DEFAULT_WEB_NAME "Caravan"  // title of the web page until renamed in Settings
 /* Battery (BMS) support. Set to 1 to bring the tab and the ECO-WORTHY/JBD
    decoding back; with 0 the code is still built but never runs, the tab is
    hidden and the switch in Settings has no effect. */
@@ -160,7 +161,7 @@ struct Shared {
   int32_t utc_offset = 0;  // from Open-Meteo, follows DST
   bool offset_valid = false;
   char web_pass[33] = "";          // web page password, "" = no login
-  char web_name[24] = "Waveshare";  // title of the web page
+  char web_name[24] = DEFAULT_WEB_NAME;  // title of the web page
   // results for the UI
   char wifi_status[96] = "Not connected";
   bool wifi_up = false;    // connected to the access point
@@ -494,6 +495,8 @@ bool sw6106_present();
 void power_set_saving(bool screen_asleep);
 extern volatile bool screen_asleep;  // the screen saver is on (set whether or not the CPU is slowed)
 bool power_saving_active();
+void power_web_activity();      // a web request came in: full speed for a while, even under the screen saver
+void power_wifi_sleep_apply();  // modem sleep only while the web server is off
 void perf_service();            // call from loop()
 void power_battery_service();   // call from loop(): watches the onboard cell
 bool power_on_battery();        // true while running on the LiPo

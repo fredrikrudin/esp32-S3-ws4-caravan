@@ -235,7 +235,7 @@ bool settings_restore() {
   prefs.putBool("hasloc", doc["hasloc"] | false);
   prefs.putInt("utcoff", doc["utcoff"] | 0);
   prefs.putString("webpass", (const char *)(doc["webpass"] | ""));
-  prefs.putString("webname", (const char *)(doc["webname"] | "Waveshare"));
+  prefs.putString("webname", (const char *)(doc["webname"] | DEFAULT_WEB_NAME));
   prefs.putUChar("scanint", doc["scanint"] | 1);
   prefs.putUChar("bl", doc["bl"] | 100);
   prefs.putUChar("blsaver", doc["blsaver"] | 10);

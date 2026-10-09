@@ -201,7 +201,7 @@ A 24-bar chart costs about 2 kB of HTML and renders anywhere, including old phon
 **A web server in the loop task** (`WebServer`, `server.handleClient()`) is simplest and reads
 the same data the screen shows, with no extra locking. A page render takes a few milliseconds.
 
-**mDNS** (`MDNS.begin("waveshare")`) removes the need to know the IP. Works on iOS, macOS and
+**mDNS** (`MDNS.begin("caravan")`) removes the need to know the IP. Works on iOS, macOS and
 Windows; some Android versions don't resolve `.local`.
 
 **Cookie login without TLS:** a random token per boot, `Set-Cookie` after a correct password,
@@ -211,7 +211,9 @@ network out; not real security. HTTPS needs 40+ kB in one block, which this boar
 
 ## Power and CPU
 
-- **WiFi modem sleep** (`WiFi.setSleep(true)`) costs nothing for a polled web page.
+- **WiFi modem sleep** (`WiFi.setSleep(true)`) looks free for a polled web page, but in
+  modem sleep the radio misses most multicast packets, so **mDNS (`name.local`) stops
+  answering**. Use it only while the web server is off.
 - **`setCpuFrequencyMhz(80)`** while the screen sleeps; 80 MHz is the lowest that keeps
   WiFi and Bluetooth running. Back to 240 on wake.
 - **Don't redraw hidden tabs.** With eight tabs updating once a second, most formatting was

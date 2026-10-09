@@ -62,7 +62,7 @@ void load_cfg() {
   prefs.getString("place", g.place, sizeof(g.place));
   prefs.getString("webpass", g.web_pass, sizeof(g.web_pass));
   prefs.getString("webname", g.web_name, sizeof(g.web_name));
-  if (!g.web_name[0]) strlcpy(g.web_name, "Waveshare", sizeof(g.web_name));
+  if (!g.web_name[0]) strlcpy(g.web_name, DEFAULT_WEB_NAME, sizeof(g.web_name));
   g.has_loc = prefs.getBool("hasloc", false);
   g.lat = prefs.getFloat("lat", 0);
   g.lon = prefs.getFloat("lon", 0);

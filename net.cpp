@@ -374,7 +374,7 @@ static void net_task(void *arg) {
   WiFi.onEvent(wifi_event);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(true);  // modem sleep: less power, no downside for a polled page
+  WiFi.setSleep(!feat_web);  // modem sleep only without the web server: it misses mDNS (power.cpp)
   wifi_inited = true;  // setup() waits for this before starting Bluetooth
 
   bool was_up = false, ntp_started = false;

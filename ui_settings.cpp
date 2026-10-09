@@ -71,7 +71,7 @@ static void webpass_save_now() {
   LOCK();
   strlcpy(g.web_pass, lv_textarea_get_text(ta_webpass), sizeof(g.web_pass));
   const char *n = lv_textarea_get_text(ta_webname);
-  strlcpy(g.web_name, n[0] ? n : "Waveshare", sizeof(g.web_name));
+  strlcpy(g.web_name, n[0] ? n : DEFAULT_WEB_NAME, sizeof(g.web_name));
   UNLOCK();
   cmd_save_web = true;
   web_password_changed();  // logs everyone out, so the new password applies at once
@@ -948,7 +948,7 @@ void build_settings_tab() {
   lv_obj_t *pwr_hint = make_grey_label(sec);
   lv_obj_set_width(pwr_hint, LV_PCT(100));
   lv_label_set_long_mode(pwr_hint, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(pwr_hint, "WiFi modem sleep is always on. Tabs that are not on screen are not redrawn, which is where most of the CPU time went.");
+  lv_label_set_text(pwr_hint, "The web page keeps working under the screen saver: WiFi modem sleep is used only while the web server is off, and a visit brings the CPU back to full speed. Tabs that are not on screen are not redrawn.");
 
   /* ---- Starting screen ---- */
   sec = make_section(p_sys, LV_SYMBOL_EYE_OPEN "  Starting screen");

@@ -8,7 +8,7 @@
  *   /switch  POST, only with "Remote admin" enabled in Settings: switches a relay or Shelly
  *   /log     the most recent log lines as plain text (same log as the Serial Monitor)
  *   /files   list of files on the TF card; /files?name=... downloads one
- * Reachable at http://waveshare.local/ (mDNS) or the board's IP address.
+ * Reachable at http://caravan.local/ (mDNS) or the board's IP address.
  * Starts as soon as WiFi is connected. Runs from loop(), so it never races the UI.
  *
  * Note: plain HTTP, so the password travels unencrypted on the local network.
@@ -74,7 +74,7 @@ static void get_page_name(char *out, size_t n) {
   LOCK();
   strlcpy(out, g.web_name, n);
   UNLOCK();
-  if (!out[0]) strlcpy(out, "Waveshare", n);
+  if (!out[0]) strlcpy(out, DEFAULT_WEB_NAME, n);
 }
 
 static void get_password(char *out) {
@@ -84,6 +84,7 @@ static void get_password(char *out) {
 }
 
 static bool authorized() {
+  power_web_activity();  // every page goes through here: full speed while it is used
   char pass[33];
   get_password(pass);
   if (!pass[0]) return true;  // no password set: open page
@@ -154,6 +155,7 @@ static void redirect(const char *to) {
 }
 
 static void handle_login() {
+  power_web_activity();
   if (server.method() != HTTP_POST) {
     send_login("");
     return;
@@ -603,7 +605,7 @@ static void handle_root() {
   add(s, "<p class='sub'>Updated every 5 s &middot; up %lu min &middot; <a href='/log'>log</a> &middot; <a href='/files'>files</a>%s</p>"
          "<p class='sub'>v" FW_VERSION " &middot; built %s %s &middot; &copy; Fredrik Rudin<br>"
          "<a href='https://github.com/fredrikrudin/esp32-S3-ws4-caravan'>github.com/fredrikrudin/esp32-S3-ws4-caravan</a><br>"
-         "med hj&auml;lp av claude.ai Opus 5</p></body></html>",
+         "Written with the help of Claude (Anthropic) &middot; <a href='https://creativecommons.org/licenses/by-nc/4.0/'>CC BY-NC 4.0</a></p></body></html>",
       (unsigned long)(now / 60000), pass[0] ? " &middot; <a href='/logout'>Log out</a>" : "", __DATE__, __TIME__);
   chunk(s, true);
   server.sendContent("");  // end of the chunked reply
@@ -855,6 +857,7 @@ static void handle_switch() {
 }
 
 void web_service() {
+  if (WiFi.status() == WL_CONNECTED) power_wifi_sleep_apply();  // follows the "Run the web server" switch
   if (!feat_web) {  // switched off in Settings
     if (started) {
       server.stop();

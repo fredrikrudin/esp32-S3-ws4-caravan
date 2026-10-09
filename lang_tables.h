@@ -323,7 +323,7 @@ static const TrPair tr_sv[] = {
   { "Check battery", "Kontrollera batteri" },
   { "Keep running on the battery when power is lost", "Fortsätt på batteriet när strömmen försvinner" },
   { "Shut down at", "Stäng av vid" },
-  { "WiFi modem sleep is always on. Tabs that are not on screen are not redrawn, which is where most of the CPU time went.", "WiFi-modemets viloläge är alltid på. Flikar som inte visas ritas inte om, och det var där det mesta av processortiden gick." },
+  { "The web page keeps working under the screen saver: WiFi modem sleep is used only while the web server is off, and a visit brings the CPU back to full speed. Tabs that are not on screen are not redrawn.", "Webbsidan fungerar även när skärmsläckaren är på: WiFi-modemets viloläge används bara när webbservern är avstängd, och ett besök ger processorn full fart igen. Flikar som inte visas ritas inte om." },
   { "Starting screen", "Startskärm" },
   { "Shown while the board starts. Set the time to 0 to skip it.", "Visas medan kortet startar. Sätt tiden till 0 för att hoppa över den." },
   { "Text", "Text" },
