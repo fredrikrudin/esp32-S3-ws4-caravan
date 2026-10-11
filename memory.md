@@ -104,7 +104,7 @@ Before and after each change:
 - [x] `lv_conf.h`: memory pool to PSRAM (1)
 - [x] Step 1: performance log (Settings -> Power) + `DEBUG_LOG` switch in `app.h` (5)
 - [x] Step 2: visible-tab-only updates (6); flow animations replaced by static coloured lines
-- [x] Power saving: CPU 240 -> 80 MHz while the screen saver shows (back to 240 while the web page is used); WiFi modem sleep only while the web server is off, as it breaks mDNS
+- [x] Power saving: dimmed backlight, hidden tabs not redrawn; WiFi modem sleep only while the web server is off, as it breaks mDNS. (CPU 240 -> 80 MHz under the screen saver was tried and removed: it froze the board.)
 - [ ] JSON allocator/filter for the weather fetch (3)
 - [ ] Step 3: `lv_conf.h` touch read period (7)
 - [x] NimBLE trimming (2): tried, no measurable gain (see above)

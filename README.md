@@ -54,7 +54,7 @@ SD card. Thresholds are under Settings → Device → Alarms, and a new alarm ca
 
 **Running on the onboard battery**: with a LiPo fitted and the setting switched on, losing
 external power turns the display into a local instrument: WiFi and Bluetooth off, screen at 10%,
-CPU at 80 MHz, the last readings kept on screen and a "Running on battery" banner along the
+the last readings kept on screen and a "Running on battery" banner along the
 bottom. At your threshold it closes the log, unmounts the card and sleeps.
 
 **Screen saver**: after 30 s without touch, a 96-pixel clock and an SOC bar on a dimmed screen.
@@ -69,7 +69,7 @@ Each page is a column of cards.
 | **Connect** | **WiFi** (scan, password, status) &middot; **Web page** (run the server, name, password, remote admin) &middot; **Weather location** |
 | **Sensors** | **Temperature** (up to 3 RuuviTags) &middot; **Battery (BMS)** &middot; **Victron devices** (add, name, encryption key, live status) &middot; **Sensor scan interval** |
 | **Control** | **Shelly** (WiFi or Bluetooth, up to 4) &middot; **Schedules** (per relay and Shelly device) &middot; **Relays** (address, active low, count, names) &middot; **I2C devices** |
-| **Device** | **Language** (English, Svenska) &middot; **Power** (CPU slowdown, onboard LiPo, battery mode and its shutdown threshold) &middot; **Display** (brightness, screen saver brightness) &middot; **Alarms** (thresholds, wake the screen, SD warning) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **Debug** (serial monitor, performance log) &middot; **About** &middot; **System** (restart, shut down, full reset) |
+| **Device** | **Language** (English, Svenska) &middot; **Power** (onboard LiPo, battery mode and its shutdown threshold) &middot; **Display** (brightness, screen saver brightness) &middot; **Alarms** (thresholds, wake the screen, SD warning) &middot; **SD card** (mount, eject, probe, logs, CSV, backup) &middot; **Debug** (serial monitor, performance log) &middot; **About** &middot; **System** (restart, shut down, full reset) |
 
 Temperature, Battery, Relays and Shelly each have an on/off switch: switching one off also stops
 its background work and takes its tab off the tab bar. Relays and Shelly also hide themselves
@@ -80,8 +80,10 @@ when nothing is connected.
 
 The display speaks **English** (the default) or **Swedish**, chosen under Settings → Device →
 Language. Changing it restarts the board, which takes a few seconds. Both are built into the
-firmware, so no SD card is needed. The web page stays in English, apart from the status texts
-it shares with the display.
+firmware, so no SD card is needed. The web page follows the same language: its own texts come from `/lang` (the page's
+`T("...")` texts, translated in the same `.po` files), and the texts in `/json` (date, weather,
+Victron status, warnings) are sent in it. The numbers and field names in `/json` never change
+with the language.
 
 ![Ruuvi in Swedish](screen-ruuvi-sv.png)
 
@@ -101,12 +103,12 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 
 **Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
 
-A small **web page** mirrors the Home tab: clock with battery and solar gauges, temperatures, a weather forecast, the Victron devices (and which are charging), the relays and the Shelly devices. Open **`http://caravan.local/`** (or the board's IP, shown under Settings → WiFi) from a phone or computer on the same WiFi. It lists the **schedules** with an override button for each, shows the **board battery**, and draws **charts**: bars of solar and consumption per hour over the last 24 hours with the battery percentage as a line, and three ten-minute graphs for solar, battery and consumption. They are plain SVG, so no JavaScript is involved. The same data is available as JSON at `/json`, and the recent log at `/log`. The page is read-only.
+A **web page** shows everything on the display: warnings, battery and solar, temperatures, charts of the last 24 hours and 10 minutes, the weather, the Victron devices, the relays, Shelly devices and schedules (with switches when Remote admin is on) and the board battery. Open **`http://caravan.local/`** (or the board's IP, shown under Settings → WiFi) on a phone, tablet or computer on the same WiFi. The page adapts to the screen: one column on a phone, two or three on a tablet or PC. It is one fixed file that the browser keeps; after that it only fetches `/json` every 5 seconds and draws itself, so the board does little work per update. If the board doesn't answer, the page says so and keeps the last values. The same data is available to scripts and Home Assistant at `/json`, and the recent log at `/log`. `sh tools/webpreview/build.sh` runs the page on a PC with example data (add `sv` for Swedish).
 
 The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
 The web server can be switched off entirely under **Settings → Connect → Web page**, which frees
-the memory the page building uses. Otherwise, under **Settings → Web page** you can name the page (default "Caravan"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The name `caravan` is set by `MDNS_NAME` in `app.h`.
+the memory the page building uses. Otherwise, under **Settings → Web page** you can name the page (default "Caravan"), switch on **Remote admin** so relays and Shelly devices can be switched from the browser (off by default, and it still requires the password), and set a password; the page then asks for it once (the login lasts 30 days, or until the board restarts or the password changes). Scripts can use `/json?key=<password>`. Leave the password empty for no login. The page uses plain HTTP, so the password keeps casual visitors on the same WiFi out, but is not strong security. The address follows the name: a page called "Cabby 620" is at `http://cabby-620.local/` (lower case, spaces become dashes, å ä ö become a a o). Without a name it is `caravan.local`, set by `MDNS_NAME` in `app.h`.
 
 After 30 seconds without touch, a screen saver shows a dim clock and lowers the backlight. A tap wakes it.
 
@@ -146,10 +148,13 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `app.h` | Configuration, data types, shared state, module functions |
 | `state.cpp` | Shared state, loading settings, small helpers |
 | `sdlog.cpp` | Logging to Serial, to a memory buffer (web `/log`) and to the TF card |
+| `watchdog.cpp` | Restarts the board if the main loop hangs, and logs where it was stuck |
 | `datalog.cpp` | Measurements as CSV, settings backup and restore |
 | `board.cpp` | Display, touch, IO expander, LVGL driver, backlight |
 | `net.cpp` | Network task: WiFi, NTP, weather, all flash writes |
-| `web.cpp` | Web page and JSON with battery, Victron and relay status |
+| `web.cpp` | Web pages and data: `/`, `/json`, `/lang`, switching, login, log, files |
+| `web_http.cpp`, `web_http.h` | The web server: several connections at once, never makes the loop wait |
+| `web_page.h` | The web page (HTML, CSS, JavaScript) that draws itself from `/json` |
 | `ble.cpp` | Bluetooth scanning |
 | `bms.cpp` | Battery BMS connection: ECO-WORTHY and JBD protocols, plus diagnostics |
 | `shelly.cpp` | Shelly devices over BLE RPC (pairing, status, switching) |
@@ -251,7 +256,7 @@ Switch on **Settings → SD card** to also append everything to `/caravan.log` o
 
 **Running on the onboard battery:** with a LiPo in the board's connector and "Keep running on the
 battery" switched on under Settings → Device → Power, losing external power turns the display into
-a local instrument: WiFi and Bluetooth off, screen at 10%, CPU at 80 MHz, the last readings kept on
+a local instrument: WiFi and Bluetooth off, screen at 10%, the last readings kept on
 screen and a "Running on battery" banner along the bottom with the charge left. At the threshold
 you set (20% by default) it closes the log, unmounts the card and sleeps. Plugging power back in
 restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly 10–15 hours.

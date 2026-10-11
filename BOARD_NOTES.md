@@ -195,6 +195,12 @@ failure message.
 **Pause BLE scanning while joining WiFi.** They share one radio; an active scan at 50% duty can
 make the association time out.
 
+**Don't use Arduino's `WebServer` next to a display.** It serves one connection at a
+time and waits on it: an idle browser connection blocks it for 5 s (`HTTP_MAX_DATA_WAIT`)
+and a client that stops reading for up to 10 s per write, and `loop()` with it. Here
+`web_http.cpp` keeps a slot per connection and uses non-blocking sockets throughout.
+Serve a fixed page and let it fetch JSON: much less work per refresh than rebuilding HTML.
+
 **Charts without JavaScript**: generate inline `<svg>` with `<rect>` bars and a `<polyline>`.
 A 24-bar chart costs about 2 kB of HTML and renders anywhere, including old phones.
 
@@ -211,11 +217,16 @@ network out; not real security. HTTPS needs 40+ kB in one block, which this boar
 
 ## Power and CPU
 
-- **WiFi modem sleep** (`WiFi.setSleep(true)`) looks free for a polled web page, but in
-  modem sleep the radio misses most multicast packets, so **mDNS (`name.local`) stops
-  answering**. Use it only while the web server is off.
-- **`setCpuFrequencyMhz(80)`** while the screen sleeps; 80 MHz is the lowest that keeps
-  WiFi and Bluetooth running. Back to 240 on wake.
+- **Keep WiFi modem sleep on** (`WiFi.setSleep(true)`, the default) while Bluetooth runs.
+  WiFi and Bluetooth share one antenna, and Espressif calls modem sleep "the essential
+  prerequisite for coexistence": the access point holds packets while Bluetooth has the
+  radio. Turning it off (to make `.local` answer faster) made the web page load only now
+  and then: Bluetooth cut into WiFi traffic and packets were lost
+  ([esp-idf #9595](https://github.com/espressif/esp-idf/issues/9595)).
+- **Don't change the CPU speed** (`setCpuFrequencyMhz(80)`) with this display running. It
+  looked like a free saving while the screen sleeps (80 MHz still keeps WiFi and Bluetooth
+  going), but the board froze: display and web page both stopped soon after
+  "CPU at 80 MHz", and once the display stayed black until a power cycle. Leave it at 240.
 - **Don't redraw hidden tabs.** With eight tabs updating once a second, most formatting was
   for pixels nobody could see. A `tab_visible()` check in each timer removes it, but keep the
   parts other pages depend on (device lists that Settings shows).

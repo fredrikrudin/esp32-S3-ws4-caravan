@@ -143,6 +143,7 @@ bool sd_log_probe() {
     WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_DIRECTION, dir);
     delay(20);
     for (uint8_t b : bits) {
+      wd_beat();  // the probe takes a while: tell the watchdog we're fine
       /* SPI mode wants chip select low */
       WS_CH32_IO::writeRegister(Wire, WS_CH32_IO::REG_OUTPUT, WS_CH32_IO::OUT_DISPLAY_ON & ~b);
       delay(30);

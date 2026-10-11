@@ -18,11 +18,48 @@ Everything below "Development builds" is in this release. New since the last bui
 - License: Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0), in
   `LICENSE.md`, the README, the main source files, Settings → Device → About and the web page,
   with a note that the code was written with the help of Claude (Anthropic's AI).
+- The CPU is no longer slowed to 80 MHz under the screen saver or in battery mode, and
+  the "Slow the CPU while the screen sleeps" switch is gone: the board froze (display and
+  web page) soon after slowing down. The screen saver still dims the backlight.
+- **The web server is new** (`web_http.cpp`), because the page loaded once and then
+  stopped answering, and could freeze the display. Arduino's WebServer serves one
+  connection at a time and waits on it: a browser's spare connection that sends nothing
+  held it for 5 s, and a phone that went to sleep halfway through a reply for 10 s per
+  piece. The new one handles six connections at once, only ever sends what the network
+  takes without waiting, and drops connections that stall. When lwIP is short of memory
+  for a moment it tries again instead of giving up (the first version did, and the page
+  arrived cut off after 1436 bytes), and it lets the browser close the connection, so
+  nothing still on its way is lost.
+- **The web page is new**: one fixed file (`web_page.h`) that loads `/json` every 5 s and
+  draws itself, so the board builds only a few kB of JSON per update instead of the whole
+  page. It adapts to phone, tablet and PC, says when the board doesn't answer and keeps the
+  last values, and pauses while the browser tab is hidden. `/json` has the charts' history
+  and more fields; the old fields are unchanged. `tools/webpreview` runs it on a PC.
+- Web page layout: cards fill the gaps in the grid instead of leaving holes, "Last 10
+  minutes" takes the full width only with two or more charts.
+- The web page follows the display's language (Settings → Device → Language): its texts
+  come from the new `/lang` and the same `.po` files as the display (`tools/i18n.py` finds
+  the page's `T("...")` texts), and `/json` sends the date, weather, Victron types and
+  states and schedule days in it. The login, file list and log pages are translated too.
+  Before, the page was English with a Swedish date and warnings.
+- A watchdog: if the main loop (screen, web page and most services) stops for 30 s, the
+  board restarts, and the first log lines after the restart say where it was stuck. A
+  crash, brown-out or hardware watchdog reset is logged at start-up too.
+- Renaming the web page (Settings → Connect → Web page) now also changes its address:
+  "Cabby 620" is at `http://cabby-620.local/`, straight away and without a restart.
 - The web page is now at **`http://caravan.local/`** (was `waveshare.local`), and its
   default title is "Caravan". A title you have set yourself is kept.
-- The web page keeps working while the screen saver shows. WiFi modem sleep (which made
-  the radio miss the `.local` name lookups) is now used only while the web server is off,
-  and a web request brings the CPU back to full speed for a minute.
+- The web page keeps working while the screen saver shows.
+- WiFi modem sleep stays on. Turning it off while the web server ran (for faster `.local`
+  answers) made the page load only now and then: WiFi and Bluetooth share the antenna, and
+  without modem sleep Bluetooth cuts into WiFi traffic and packets are lost. Espressif calls
+  modem sleep the essential prerequisite for running both.
+- The web server keeps 12 kB of internal RAM free for WiFi: only ~35 kB is free with the
+  display, WiFi and Bluetooth running, and replies sent at full speed could use the rest.
+  It now sends two segments at a time, waits while memory is short, lets new connections
+  wait while all six are busy (they got an error page before), and writes a line to the
+  log once a minute when anything went wrong: stalled replies, send errors, or time spent
+  waiting for memory or a free connection.
 - Version 1.0, with the version on the first line of every file and
   `tools/set_version.py` to change it everywhere.
 - New README screenshots, rendered by the firmware's own UI code with LVGL on a PC

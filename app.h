@@ -397,7 +397,6 @@ extern volatile bool feat_shelly;  // Shelly tab: Shelly devices over Bluetooth 
 extern volatile bool feat_web;     // run the web server at all (default on)
 extern volatile bool feat_remote;  // web page may switch relays and Shelly (default off)
 extern volatile bool feat_sdlog;   // write the log to the TF card (default off)
-extern volatile bool feat_powersave;  // slow the CPU while the screen sleeps
 extern volatile bool feat_perflog;
 extern volatile bool feat_serial;  // serial monitor: everything to USB serial (default off: faults only)
 extern volatile bool feat_battmode;        // run on the LiPo when external power goes
@@ -436,6 +435,8 @@ bool net_wait_wifi_init(uint32_t ms);  // waits until the WiFi driver is initial
 /* web.cpp */
 void web_service();           // call from loop(): starts the web server once WiFi is up, then serves requests
 void web_password_changed();  // call after g.web_pass changed: logs everyone out
+void web_name_changed();      // call after g.web_name changed: the .local address follows it
+void web_host_name(char *out, size_t n);  // "Cabby 620" -> "cabby-620" (MDNS_NAME if nothing is left)
 
 /* ruuvi.cpp */
 void ruuvi_parse(const std::string &md, const char *addr, int rssi);
@@ -491,12 +492,14 @@ void sw6106_begin();
 void sw6106_service();  // call from loop(): keep-alive against light-load shutdown
 bool sw6106_present();
 
+/* watchdog.cpp: restarts the board if loop() hangs, and says where it was */
+void watchdog_begin();             // in setup(), after log_begin()
+void wd_stage(const char *where);  // loop(): about to run this part
+void wd_beat();                    // inside long jobs in loop() (SD probe): still alive
+
 /* power.cpp */
 void power_set_saving(bool screen_asleep);
 extern volatile bool screen_asleep;  // the screen saver is on (set whether or not the CPU is slowed)
-bool power_saving_active();
-void power_web_activity();      // a web request came in: full speed for a while, even under the screen saver
-void power_wifi_sleep_apply();  // modem sleep only while the web server is off
 void perf_service();            // call from loop()
 void power_battery_service();   // call from loop(): watches the onboard cell
 bool power_on_battery();        // true while running on the LiPo

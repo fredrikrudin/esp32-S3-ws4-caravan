@@ -30,6 +30,7 @@ void setup() {
   board_init();  // IO expander, touch, display, LVGL
   log_begin();   // Serial + ring buffer (+ TF card when switched on)
   log_boot_banner();
+  watchdog_begin();  // says why the last run ended, if it wasn't a normal restart
   if (feat_sdlog && !sd_log_mount())
     log_fault("SD: not mounted at startup; it is retried once a minute, or use Mount in Settings");
   history_begin();
@@ -59,18 +60,29 @@ void setup() {
                    heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
   splash_finish();  // the starting screen stays up for 5 s from power-on
+  wd_beat();        // setup is done: the watchdog counts from here
 }
 
 void loop() {
+  wd_stage("ble");
   ble_scan_service();
+  wd_stage("web");
   web_service();
+  wd_stage("csv");
   csv_service();
+  wd_stage("history");
   history_service();
+  wd_stage("perf");
   perf_service();
+  wd_stage("battery mode");
   power_battery_service();
+  wd_stage("battery monitor");
   battery_monitor();
+  wd_stage("schedules");
   schedule_service();
+  wd_stage("sw6106");
   sw6106_service();
+  wd_stage("ui");
   lv_timer_handler();
   delay(5);
 }

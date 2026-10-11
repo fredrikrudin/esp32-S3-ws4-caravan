@@ -32,7 +32,6 @@ volatile bool feat_shelly = false;  // Shelly over Bluetooth is off until switch
 volatile bool feat_web = true;      // the web server runs unless switched off
 volatile bool feat_remote = false;  // switching from the web page is off until switched on
 volatile bool feat_sdlog = false;   // logging to the TF card is off until switched on
-volatile bool feat_powersave = true;   // on by default: it only slows the CPU while asleep
 volatile bool feat_perflog = false;
 volatile bool feat_serial = false;
 volatile bool feat_battmode = false;  // off until switched on
@@ -80,7 +79,6 @@ void load_cfg() {
   feat_web = !prefs.getUChar("noweb", 0);  // stored inverted, so old settings keep the server on
   feat_sdlog = feat & 0x20;
   feat_csv = feat & 0x40;
-  feat_powersave = !(feat & 0x80);  // stored inverted, so old settings default to on
   csv_interval_min = constrain(prefs.getUChar("csvmin", 5), 1, 60);
   if (prefs.getBytesLength("rhist") == sizeof(ruuvi_hist)) prefs.getBytes("rhist", ruuvi_hist, sizeof(ruuvi_hist));
   if (prefs.getBytesLength("splash") == sizeof(splash_cfg)) prefs.getBytes("splash", &splash_cfg, sizeof(splash_cfg));

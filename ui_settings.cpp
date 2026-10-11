@@ -62,7 +62,9 @@ static void update_web_label() {
     lv_label_set_text(lbl_web, "Web server switched off. Nothing is served, and about 12 kB of memory is freed.");
     return;
   }
-  lv_label_set_text_fmt(lbl_web, "\"%s\" at http://%s.local/ on the same WiFi.\n%s%s", name, MDNS_NAME,
+  char host[32];
+  web_host_name(host, sizeof(host));
+  lv_label_set_text_fmt(lbl_web, "\"%s\" at http://%s.local/ on the same WiFi.\n%s%s", name, host,
                         has_pass ? TR("Password required.") : TR("No password: anyone on the WiFi can view the page."),
                         feat_remote ? TR(" Switching allowed.") : "");
 }
@@ -75,6 +77,7 @@ static void webpass_save_now() {
   UNLOCK();
   cmd_save_web = true;
   web_password_changed();  // logs everyone out, so the new password applies at once
+  web_name_changed();      // the .local address follows the name
   update_web_label();
   kb_hide();
 }
@@ -423,12 +426,6 @@ static void update_lipo_label(bool read_now = true) {
 
 static void lipo_refresh_cb(lv_event_t *e) {
   update_lipo_label();
-}
-
-static void powersave_cb(lv_event_t *e) {
-  feat_powersave = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
-  cmd_save_feat = true;
-  if (!feat_powersave) power_set_saving(false);
 }
 
 static lv_obj_t *lbl_battmode, *sl_battpct;
@@ -930,7 +927,6 @@ void build_settings_tab() {
 
   /* ---- Power ---- */
   sec = make_section(p_sys, LV_SYMBOL_BATTERY_2 "  Power");
-  make_switch_row(sec, "Slow the CPU while the screen sleeps", feat_powersave, powersave_cb);
 
   lbl_lipo = lv_label_create(sec);
   lv_obj_set_width(lbl_lipo, LV_PCT(100));
@@ -948,7 +944,7 @@ void build_settings_tab() {
   lv_obj_t *pwr_hint = make_grey_label(sec);
   lv_obj_set_width(pwr_hint, LV_PCT(100));
   lv_label_set_long_mode(pwr_hint, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(pwr_hint, "The web page keeps working under the screen saver: WiFi modem sleep is used only while the web server is off, and a visit brings the CPU back to full speed. Tabs that are not on screen are not redrawn.");
+  lv_label_set_text(pwr_hint, "The CPU always runs at full speed (slowing it froze the display). WiFi modem sleep is used only while the web server is off. Tabs that are not on screen are not redrawn.");
 
   /* ---- Starting screen ---- */
   sec = make_section(p_sys, LV_SYMBOL_EYE_OPEN "  Starting screen");

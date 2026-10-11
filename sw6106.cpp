@@ -3,7 +3,7 @@
  *
  * The chip switches its output off when it sees a light load, which is what a
  * board running on battery looks like, especially with the screen dimmed, the
- * CPU at 80 MHz and both radios off. Two ways to stop it:
+ * screen dimmed and both radios off. Two ways to stop it:
  *   - write 0x0A to register 0x38 once at startup, and
  *   - write 0x01 to register 0x03 about once a second as a keep-alive.
  * Both are done here; the keep-alive is the one that matters in practice.
