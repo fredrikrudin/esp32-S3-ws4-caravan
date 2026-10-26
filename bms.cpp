@@ -39,7 +39,8 @@ static BmsProto proto = PROTO_PROBE_JBD;
 static NimBLERemoteCharacteristic *ew_write = nullptr;
 
 #define BMS_POLL_MS 5000     // JBD request interval
-#define BMS_RETRY_MS 30000   // reconnect interval after a failure
+#define BMS_RETRY_MS 30000   // reconnect interval after the first failure ...
+#define BMS_RETRY_MAX_MS 600000  // ... doubling up to 10 minutes while the battery stays out of reach
 
 /* ---------- helpers ---------- */
 static void set_status(const char *fmt, ...) {
@@ -397,13 +398,14 @@ static bool do_connect() {
 
 static void bms_task(void *arg) {
   uint32_t next_try = 0, next_poll = 0;
+  uint32_t retry_ms = BMS_RETRY_MS;
   int tries = 0;
   bool had_target = false, reported = false;
   for (;;) {
-    if (!feat_bms) {  // switched off in Settings
+    if (!feat_bms || power_on_battery()) {  // switched off in Settings, or on the LiPo
       if (client && client->isConnected()) {
         client->disconnect();
-        set_status(TR("Battery reading is switched off in Settings"));
+        set_status(feat_bms ? TR("Paused while running on the board battery") : TR("Battery reading is switched off in Settings"));
       }
       had_target = false;
       vTaskDelay(pdMS_TO_TICKS(500));
@@ -429,8 +431,21 @@ static void bms_task(void *arg) {
     }
 
     if (have_target && (connect_req || (!connected && (int32_t)(millis() - next_try) >= 0))) {
+      if (connect_req) retry_ms = BMS_RETRY_MS;  // asked for in Settings: start over
       connect_req = false;
-      if (!do_connect()) next_try = millis() + BMS_RETRY_MS;
+      uint32_t free_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+      bool ok = do_connect();
+      mem_note(MEM_BMS_CONNECT, (int32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - (int32_t)free_before);
+      /* Each attempt holds Bluetooth connection memory (internal RAM) for up to 8 s.
+         With the battery out of reach (at home, say) that was every 30 s: a likely
+         reason internal RAM ran down to 1 kB at times. So wait longer after each
+         failure; Connect in Settings tries at once. */
+      if (!ok) {
+        next_try = millis() + retry_ms;
+        if (retry_ms < BMS_RETRY_MAX_MS) retry_ms = retry_ms * 2 > BMS_RETRY_MAX_MS ? BMS_RETRY_MAX_MS : retry_ms * 2;
+      } else {
+        retry_ms = BMS_RETRY_MS;
+      }
       next_poll = millis() + 500;
       tries = 0;
       reported = false;

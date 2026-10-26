@@ -274,10 +274,30 @@ void log_begin() {
 }
 
 /* One log line to USB serial (if wanted), the ring buffer behind /log and the card */
+/* Every line starts with the local date and time ("2026-10-11 19:12:05"), or
+   with the time since start ("+0:00:12") until the clock is set from the internet */
+static int log_stamp(char *out, size_t len) {
+  time_t now = time(nullptr);
+  /* the local offset is known once the settings are loaded (or the weather has
+     come); before that the clock may be set (it survives a restart) but the time
+     would show as UTC */
+  if (now > 1700000000 && g.offset_valid) {
+    time_t lt = now + g.utc_offset;  // read without the lock: logf may be called while it is held
+    struct tm tm;
+    gmtime_r(&lt, &tm);
+    return (int)strftime(out, len, "%Y-%m-%d %H:%M:%S ", &tm);
+  }
+  uint32_t s = millis() / 1000;
+  return snprintf(out, len, "+%lu:%02lu:%02lu ", (unsigned long)(s / 3600), (unsigned long)(s / 60 % 60), (unsigned long)(s % 60));
+}
+
 static void log_line(bool to_serial, const char *fmt, va_list ap) {
-  char buf[200];
-  int n = vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
+  char buf[224];
+  int st = log_stamp(buf, 24);
+  if (st < 0 || st >= 24) st = 0;
+  int n = vsnprintf(buf + st, sizeof(buf) - 1 - st, fmt, ap);
   if (n < 0) return;
+  n += st;
   if (n > (int)sizeof(buf) - 2) n = sizeof(buf) - 2;
   if (n && buf[n - 1] != '\n') {  // every entry is one line
     buf[n++] = '\n';

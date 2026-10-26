@@ -36,6 +36,7 @@ class MiniHttp {
   bool begin(uint16_t port = 80);
   void stop();
   bool running() const { return listen_fd >= 0; }
+  bool busy() const;  // a request is coming in or a reply going out
   void handleClient();  // call often; never blocks
 
   void on(const char *path, Handler h);
@@ -47,7 +48,7 @@ class MiniHttp {
   bool hasArg(const char *name) const;
   String arg(const char *name) const;
   bool hasHeader(const char *name) const;
-  String header(const char *name) const;  // "Cookie" and "If-None-Match" are kept
+  String header(const char *name) const;  // "Cookie", "If-None-Match" and "Accept-Encoding" are kept
   String clientIP() const;
 
   /* the reply: headers first, then one of the send calls */
@@ -91,7 +92,7 @@ class MiniHttp {
   /* request being handled */
   Slot *cur = nullptr;
   MiniHttpMethod req_method = MH_GET;
-  String req_path, req_query, req_body, req_cookie, req_inm;
+  String req_path, req_query, req_body, req_cookie, req_inm, req_ae;
   String extra_headers;
   bool collecting = false;
   int collect_code = 200;
@@ -99,6 +100,7 @@ class MiniHttp {
 
   void accept_new();
   Slot *free_slot();
+  void broken_listen(int e);
   void read_slot(Slot &s);
   void write_slot(Slot &s);
   void close_slot(Slot &s);

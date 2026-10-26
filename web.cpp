@@ -1,6 +1,6 @@
 // esp32-S3-ws4-caravan v1.0
 /* Web server (port 80).
- *   /        The page: a fixed HTML file (web_page.h) that loads /json every 5 s and
+ *   /        The page: a fixed HTML file (web_page.h) that loads /json every 30 s and
  *            draws itself in the browser, adapting to phone, tablet or PC.
  *   /lang    The page's texts in the display's language (see handle_lang)
  *   /json    All the data as JSON: for the page, scripts or Home Assistant
@@ -20,8 +20,14 @@
 #include "app.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <mdns.h>       // mdns_netif_action: announce the name
+#include <esp_netif.h>
 #include "web_http.h"
 #include "web_page.h"
+#include "web_page_gz.h"  // the same page, compressed: tools/web_gz.py
+
+static_assert(sizeof(WEB_PAGE) - 1 == WEB_PAGE_GZ_SRC_LEN,
+              "web_page.h has changed: run  python3 tools/web_gz.py  to update web_page_gz.h");
 
 #ifndef WEB_PORT
 #define WEB_PORT 80  // tools/webpreview uses 8080
@@ -107,6 +113,39 @@ void web_host_name(char *out, size_t n) {
 static volatile bool host_changed = false;
 void web_name_changed() {
   host_changed = true;  // web_service() announces the new name
+}
+
+/* Bluetooth holds back its next scan while this is true (ble.cpp) */
+bool web_busy() {
+  return started && server.busy();
+}
+
+/* After WiFi has been away (router restart, weak signal) mDNS is started again,
+   so http://<name>.local/ answers on the new connection */
+static volatile bool wifi_back = false;
+void web_wifi_back() {
+  wifi_back = true;
+}
+
+/* mDNS answers questions, but with modem sleep the board misses some of them
+   (BOARD_NOTES.md). So it also tells the network its name and address once a
+   minute: phones and PCs keep that for two minutes and find the page without
+   asking. */
+static void mdns_announce() {
+  static uint32_t next = 0;
+  if ((int32_t)(millis() - next) < 0) return;
+  next = millis() + 60000;
+  esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+  if (sta) mdns_netif_action(sta, MDNS_EVENT_ANNOUNCE_IP4);
+}
+
+static void mdns_start(const char *why) {
+  char host[32];
+  web_host_name(host, sizeof(host));
+  MDNS.end();
+  if (MDNS.begin(host)) MDNS.addService("http", "tcp", 80);
+  else log_fault("Web server: mDNS did not start (%s.local)", host);
+  logf("Web server: %s, http://%s.local/ or http://%s/", why, host, WiFi.localIP().toString().c_str());
 }
 
 static void get_page_name(char *out, size_t n) {
@@ -248,7 +287,7 @@ static void take_snapshot() {
 static float ruuvi_temp(int slot, uint32_t now) {
   if (!feat_ruuvi || !ruuvi_cfg[slot].used) return NAN;
   for (int i = 0; i < MAX_TAGS; i++)
-    if (rtags[i].used && !strcmp(rtags[i].addr, ruuvi_cfg[slot].mac) && rtags[i].has_temp && now - rtags[i].last_seen < 600000UL)
+    if (rtags[i].used && !strcmp(rtags[i].addr, ruuvi_cfg[slot].mac) && rtags[i].has_temp && now - rtags[i].last_seen < sensor_stale_ms(600000UL))
       return rtags[i].temp;
   return NAN;
 }
@@ -299,7 +338,7 @@ static void handle_lang() {
   s.reserve(4096);  // PSRAM
   s += '{';
   if (ui_translated) {
-    char en[96];
+    char en[160];  // the longest page text fits
     for (const char *p = WEB_PAGE; (p = strstr(p, "T(\"")) != nullptr;) {
       bool call = p == WEB_PAGE || !(isalnum((unsigned char)p[-1]) || p[-1] == '_');
       p += 3;
@@ -337,7 +376,13 @@ static void handle_root() {
   }
   server.sendHeader("ETag", etag);
   server.sendHeader("Cache-Control", "no-cache");  // the browser checks the ETag each time
-  server.send_P(200, "text/html; charset=utf-8", WEB_PAGE, strlen_P(WEB_PAGE));
+  server.sendHeader("Vary", "Accept-Encoding");
+  if (server.header("Accept-Encoding").indexOf("gzip") >= 0) {  // every browser: a third of the size
+    server.sendHeader("Content-Encoding", "gzip");
+    server.send_P(200, "text/html; charset=utf-8", (const char *)WEB_PAGE_GZ, sizeof(WEB_PAGE_GZ));
+  } else {
+    server.send_P(200, "text/html; charset=utf-8", WEB_PAGE, sizeof(WEB_PAGE) - 1);
+  }
 }
 
 /* ---------- JSON ---------- */
@@ -750,20 +795,23 @@ void web_service() {
       return;
     }
     started = true;
-    char host[32];
-    web_host_name(host, sizeof(host));
-    if (MDNS.begin(host)) MDNS.addService("http", "tcp", 80);
-    logf("Web server: http://%s.local/ or http://%s/", host, WiFi.localIP().toString().c_str());
+    mdns_start("started");
     host_changed = false;
+    wifi_back = false;
     return;
   }
   if (host_changed) {  // the page was renamed: answer to the new .local name
     host_changed = false;
-    char host[32];
-    web_host_name(host, sizeof(host));
-    MDNS.end();
-    if (MDNS.begin(host)) MDNS.addService("http", "tcp", 80);
-    logf("Web server: renamed, now http://%s.local/", host);
+    mdns_start("renamed");
+  }
+  if (wifi_back && WiFi.status() == WL_CONNECTED) {
+    wifi_back = false;
+    mdns_start("WiFi back");
+  }
+  if (WiFi.status() == WL_CONNECTED) mdns_announce();
+  if (!server.running()) {  // the listening socket broke: open it again
+    if (server.begin(WEB_PORT)) logf("Web server: port %d opened again", WEB_PORT);
+    return;
   }
   server.handleClient();
 }

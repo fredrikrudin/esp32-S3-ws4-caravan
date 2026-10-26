@@ -1,6 +1,7 @@
 // esp32-S3-ws4-caravan v1.0
 /* Board hardware: IO expander, touch, RGB display, LVGL driver setup, backlight */
 #include "app.h"
+#include <type_traits>
 #include "Arduino_GFX_Library.h"
 #include "TouchDrvGT911.hpp"
 #include "WS_CH32_IO.h"  // after TouchDrvGT911 (it clears SensorLib's DEFAULT_SDA/SCL macros)
@@ -20,19 +21,41 @@ static Arduino_DataBus *bus = new Arduino_SWSPI(
   GFX_NOT_DEFINED /* DC */, 42 /* CS */,
   2 /* SCK */, 1 /* MOSI */, GFX_NOT_DEFINED /* MISO */);
 
-static Arduino_ESP32RGBPanel *rgbpanel = new Arduino_ESP32RGBPanel(
-  40 /* DE */, 39 /* VSYNC */, 38 /* HSYNC */, 41 /* PCLK */,
-  46 /* R0 */, 3 /* R1 */, 8 /* R2 */, 18 /* R3 */, 17 /* R4 */,
-  14 /* G0 */, 13 /* G1 */, 12 /* G2 */, 11 /* G3 */, 10 /* G4 */, 9 /* G5 */,
-  5 /* B0 */, 45 /* B1 */, 48 /* B2 */, 47 /* B3 */, 21 /* B4 */,
-  1 /* hsync_polarity */, 10 /* hsync_front_porch */, 8 /* hsync_pulse_width */, 50 /* hsync_back_porch */,
-  1 /* vsync_polarity */, 10 /* vsync_front_porch */, 8 /* vsync_pulse_width */, 20 /* vsync_back_porch */,
+/* Bounce buffers: the display is fed from two small buffers in internal RAM,
+   refilled from the framebuffer in PSRAM, so the picture holds steady when
+   WiFi, Bluetooth and the SD card also use PSRAM.
+   GFX Library for Arduino 1.5.x always takes 40 lines for them: 2 x 38.4 kB =
+   77 kB of internal RAM, the single biggest user of it on this board. From
+   1.6 the size is ours to choose: 10 lines (2 x 9.6 kB, as in Espressif's own
+   RGB panel example) gives back about 58 kB. 0 turns them off. */
+#define BOUNCE_LINES 10
+
+/* The same panel settings for either library version: 1.6 and later take the
+   bounce buffer size as one more argument, 1.5 doesn't */
+static int bounce_lines = 40;  // for the boot log
+
+template <typename P, typename... A>
+static P *make_panel(A... a) {
+  if constexpr (std::is_constructible<P, A..., size_t>::value) {
+    bounce_lines = BOUNCE_LINES;
+    return new P(a..., (size_t)(BOUNCE_LINES * 480));
+  } else {
+    return new P(a...);
+  }
+}
+
+static Arduino_ESP32RGBPanel *rgbpanel = make_panel<Arduino_ESP32RGBPanel>(
+  (int8_t)40 /* DE */, (int8_t)39 /* VSYNC */, (int8_t)38 /* HSYNC */, (int8_t)41 /* PCLK */,
+  (int8_t)46 /* R0 */, (int8_t)3 /* R1 */, (int8_t)8 /* R2 */, (int8_t)18 /* R3 */, (int8_t)17 /* R4 */,
+  (int8_t)14 /* G0 */, (int8_t)13 /* G1 */, (int8_t)12 /* G2 */, (int8_t)11 /* G3 */, (int8_t)10 /* G4 */, (int8_t)9 /* G5 */,
+  (int8_t)5 /* B0 */, (int8_t)45 /* B1 */, (int8_t)48 /* B2 */, (int8_t)47 /* B3 */, (int8_t)21 /* B4 */,
+  (uint16_t)1 /* hsync_polarity */, (uint16_t)10 /* hsync_front_porch */, (uint16_t)8 /* hsync_pulse_width */, (uint16_t)50 /* hsync_back_porch */,
+  (uint16_t)1 /* vsync_polarity */, (uint16_t)10 /* vsync_front_porch */, (uint16_t)8 /* vsync_pulse_width */, (uint16_t)20 /* vsync_back_porch */,
   /* A lower pixel clock needs less PSRAM bandwidth, which stops the panel from
      losing sync (the whole image shifted down) when WiFi, Bluetooth, the SD card
-     and the log buffer are all using PSRAM. 10 MHz is about 47 frames/s.
-     The proper fix is bounce buffers, which need a newer GFX Library for Arduino. */
-  0 /* pclk_active_neg */, 10000000 /* prefer_speed */, false /* useBigEndian */,
-  0 /* de_idle_high */, 0 /* pclk_idle_high */);
+     and the log buffer are all using PSRAM. 10 MHz is about 47 frames/s. */
+  (uint16_t)0 /* pclk_active_neg */, (int32_t)10000000 /* prefer_speed */, false /* useBigEndian */,
+  (uint16_t)0 /* de_idle_high */, (uint16_t)0 /* pclk_idle_high */);
 
 static Arduino_RGB_Display *gfx = new Arduino_RGB_Display(
   480 /* width */, 480 /* height */, rgbpanel, 2 /* rotation */, true /* auto_flush */,
@@ -148,7 +171,8 @@ void board_init() {
   uint32_t screen_h = gfx->height();
 
   lv_init();
-  serf("Internal heap after display init: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  serf("Internal heap after display init: %u (bounce buffers %d lines%s)\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+       bounce_lines, bounce_lines == 40 ? ", fixed by GFX Library 1.5: 1.6 or later saves ~58 kB" : "");
 
   /* LVGL draw buffers in PSRAM, so internal RAM stays free for WiFi and BLE */
   size_t buf_px = screen_w * 60;

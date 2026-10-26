@@ -1,6 +1,6 @@
 // esp32-S3-ws4-caravan v1.0
 #pragma once
-/* The web page: one fixed HTML file that fetches /json every 5 seconds and draws
+/* The web page: one fixed HTML file that fetches /json every 30 seconds and draws
  * itself in the browser. The board only builds a few kB of JSON per update, and
  * the page adapts to any screen: one column on a phone, more on a tablet or PC.
  * Sections appear only for what the board has (relays, Shelly, NMEA 2000 ...),
@@ -20,8 +20,9 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 6px;max-width:1240px;margin:0 auto}
 header h1{font-size:20px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.clock{text-align:right;line-height:1.1}.clock b{font-size:26px;font-variant-numeric:tabular-nums}
+.clock{text-align:right;line-height:1.1;margin-left:auto}.clock b{font-size:26px;font-variant-numeric:tabular-nums}
 .clock div{color:var(--dim);font-size:12px}
+.upd{font:inherit;font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);background:var(--card2);color:var(--text);cursor:pointer;white-space:nowrap}
 .pill{font-size:12px;padding:3px 9px;border-radius:99px;background:var(--card2);color:var(--dim);white-space:nowrap}
 .pill.ok::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}
 .pill.bad{background:#5a3b10;color:#ffd08a}
@@ -56,18 +57,39 @@ svg.c24{height:170px}svg.sp{height:46px;margin:4px 0}
 .fc>div{background:var(--card2);border-radius:10px;padding:8px;text-align:center;font-size:13px}
 .seg{display:inline-flex;border-radius:9px;overflow:hidden;border:1px solid #2f6fb5}
 .seg button{font:inherit;font-size:14px;padding:7px 14px;border:0;background:#0e2233;color:var(--text);cursor:pointer}
-.seg button.act{background:#2f6fb5;color:#fff}.seg button:disabled{opacity:.6;cursor:default}
+.seg button.act{background:#4a525c;color:#fff}.seg button.act[data-on="1"]{background:#2e9e4f}.seg button:disabled{opacity:.6;cursor:default}
 .btn{font:inherit;font-size:13px;padding:6px 10px;margin-top:6px;border-radius:8px;border:1px solid var(--line);background:var(--card2);color:var(--text);cursor:pointer}
 .tanks{display:grid;grid-template-columns:minmax(0,max-content) minmax(60px,1fr) auto;gap:10px 12px;align-items:center}
 .tanks .bar{margin:0}
-footer{max-width:1240px;margin:0 auto;padding:0 16px 28px;color:var(--dim);font-size:12px;line-height:1.7}
+footer{max-width:1240px;margin:0 auto;padding:0 16px 28px}
+/* the About card: like the others, but quieter */
+.about{border:1px solid var(--line);border-radius:14px;padding:12px 16px;color:var(--dim);font-size:12px;line-height:1.6}
+.about h2{font-size:11px;margin-bottom:8px}
+.about dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}
+.about dt{color:var(--dim);opacity:.75}
+.about dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.about a{color:var(--dim);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:2px}
+.about a:hover{color:var(--blue)}
+@media (max-width:420px){.about dl{grid-template-columns:1fr}.about dt{margin-top:6px}}
 a{color:var(--blue)}
 .empty{color:var(--dim);font-size:13px}
-@media (max-width:420px){.big{font-size:38px}header h1{font-size:18px}.clock b{font-size:22px}main{padding:6px 10px 20px}}
+/* while the first answer is on its way: grey placeholder cards, or the last values dimmed */
+.skel h2,.skel i{display:block;border-radius:7px;background:linear-gradient(90deg,var(--card2) 0%,#2f3640 50%,var(--card2) 100%);background-size:200% 100%;animation:sk 1.4s linear infinite}
+.skel h2{width:40%;height:12px}.skel i{height:16px;margin:12px 0 0}
+@keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel h2,.skel i{animation:none}}
+body.stale main{opacity:.55}
+main{transition:opacity .3s}
+@media (max-width:420px){.big{font-size:38px}header h1{font-size:18px;flex-basis:100%}.clock b{font-size:22px}main{padding:6px 10px 20px}}
 </style></head><body>
-<header><h1 id="name">&nbsp;</h1><span class="pill" id="state">Connecting&hellip;</span>
+<header><h1 id="name">&nbsp;</h1><span class="pill" id="state">Connecting&hellip;</span><button class="upd" id="upd">&#8635;</button>
 <div class="clock"><b id="time">--:--</b><div id="date"></div></div></header>
-<main><div id="alarms"></div><div class="grid" id="grid"></div></main>
+<main><div id="alarms"></div><div class="grid" id="grid">
+<section class="card skel"><h2></h2><i style="width:55%;height:34px"></i><i></i></section>
+<section class="card skel"><h2></h2><i style="width:45%;height:34px"></i><i style="width:80%"></i></section>
+<section class="card skel"><h2></h2><i></i><i style="width:70%"></i><i style="width:85%"></i></section>
+<section class="card skel"><h2></h2><i style="width:60%"></i><i></i><i style="width:75%"></i></section>
+</div></main>
 <footer id="foot"></footer>
 <script>
 "use strict";
@@ -80,18 +102,28 @@ const lvl=l=>l==2?"alm":l==1?"warn":"";
    texts: every T(...) call below with a quoted text (tools/i18n.py collects them into
    lang/<code>.po, web.cpp finds them for /lang). Each %s is filled in from the
    arguments after the text, in order. */
-let TXT={},lang="en";
+let TXT={},lang="en",langV="";
 const T=(t,...a)=>{let i=0;return (TXT[t]||t).replace(/%s/g,()=>a[i++])};
-async function setLang(l){
-  if(l==lang)return;
-  try{const r=await fetch("/lang",{cache:"no-store"});if(r.ok){TXT=await r.json();lang=l;document.documentElement.lang=l}}catch(e){}
+async function setLang(l,v){
+  if(l==lang&&v==langV)return;
+  try{const r=await fetch("/lang",{cache:"no-store"});if(r.ok){TXT=await r.json();lang=l;langV=v;document.documentElement.lang=l;keep("lang",{l,v,TXT})}}catch(e){}
 }
+/* The last answer is kept in this browser, so the page can show it straight away
+   (dimmed) while the board answers. Nothing breaks if the browser keeps nothing. */
+const keep=(k,v)=>{try{localStorage.setItem("ws4."+k,JSON.stringify(v))}catch(e){}};
+const kept=k=>{try{return JSON.parse(localStorage.getItem("ws4."+k))}catch(e){return null}};
 let timer=0,busy=false,fails=0,lastOk=0,pvMax=400,data=null;
 
 function schedule(ms){clearTimeout(timer);timer=setTimeout(load,ms)}
+/* Every 30 s, and every 2 minutes once the page has been left alone for 2 minutes:
+   each update is work for the board. Update, a switch or coming back to the tab
+   makes it quick again. */
+let active=Date.now();
+const every=()=>Date.now()-active<120000?30000:120000;
+function wake(){active=Date.now();schedule(0)}
 async function load(){
   if(busy)return;
-  if(document.hidden){schedule(5000);return}   // nobody is looking: don't load the board
+  if(document.hidden){schedule(10000);return}   // nobody is looking: don't load the board
   busy=true;
   const ac=new AbortController(),to=setTimeout(()=>ac.abort(),8000);
   try{
@@ -99,19 +131,22 @@ async function load(){
     if(r.status==401){location.href="/login";return}
     if(!r.ok)throw new Error(r.status);
     data=await r.json();fails=0;lastOk=Date.now();
-    if(data.lang&&data.lang!=lang)await setLang(data.lang);
-    render(data);
+    if(data.lang)await setLang(data.lang,data.version);
+    render(data);document.body.classList.remove("stale");
+    keep("data",{t:lastOk,d:data});
   }catch(e){fails++}
-  finally{clearTimeout(to);busy=false;status();schedule(fails?Math.min(30000,4000*fails):5000)}
+  finally{clearTimeout(to);busy=false;status();schedule(fails?Math.min(30000,4000*fails):every())}
 }
 function status(){
   const s=$("state");
+  $("upd").textContent="↻ "+T("Update");
   if(!lastOk){s.className="pill"+(fails?" bad":"");s.textContent=fails?T("No answer, retrying"):T("Connecting…");return}
   const age=Math.round((Date.now()-lastOk)/1000);
   if(fails){s.className="pill bad";s.textContent=T("Offline · data %s old",age<90?age+" s":Math.round(age/60)+" min")}
   else{s.className="pill ok";s.textContent=T("Connected")}
 }
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)schedule(0)});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)wake()});
+$("upd").addEventListener("click",wake);
 
 /* ---- small charts as SVG ---- */
 function bars24(h){
@@ -224,7 +259,14 @@ function render(d){
   if(bb)c.push(card(T("Board battery"),`<div class="flex"><span class="mid">${num(bb.percent)}%</span><span class="sub">${num(bb.voltage,2)} V · ${bb.charging?T("charging or full"):bb.on_battery?T("running on battery"):T("on external power")}</span></div><div class="bar"><i style="width:${bb.percent}%;background:var(--green)"></i></div>`));
 
   $("grid").innerHTML=c.join("");
-  $("foot").innerHTML=`${T("Updated %s",new Date().toLocaleTimeString(lang))} · ${T("up %s",fmtUp(d.uptime_min))} · <a href="/log">${T("log")}</a> · <a href="/files">${T("files")}</a> · <a href="/json">JSON</a>${d.logout?` · <a href="/logout">${T("Log out")}</a>`:""}<br>v${esc(d.version)} · © Fredrik Rudin · <a href="https://github.com/fredrikrudin/${esc(d.project)}">github.com/fredrikrudin/${esc(d.project)}</a><br>${T("Written with the help of Claude (Anthropic)")} · <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>`;
+  const rate=every()<60000?T("every 30 s"):T("every 2 minutes");
+  const links=`<a href="/log">${T("log")}</a> · <a href="/files">${T("files")}</a> · <a href="/json">JSON</a>${d.logout?` · <a href="/logout">${T("Log out")}</a>`:""}`;
+  $("foot").innerHTML=`<section class="about"><h2>${T("About")}</h2><dl>
+<dt>${T("Updates")}</dt><dd>${T("Updated %s",new Date().toLocaleTimeString(lang))} · ${rate}<br><span style="opacity:.75">${T("Every 30 s while the page is in use, every 2 minutes after 2 minutes without use. Update fetches at once.")}</span></dd>
+<dt>${T("Board")}</dt><dd>${esc(d.project)} v${esc(d.version)} · ${T("up %s",fmtUp(d.uptime_min))} · ${links}</dd>
+<dt>${T("Source")}</dt><dd><a href="https://github.com/fredrikrudin/${esc(d.project)}">github.com/fredrikrudin/${esc(d.project)}</a></dd>
+<dt>${T("License")}</dt><dd>© Fredrik Rudin · <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a> · ${T("Written with the help of Claude (Anthropic)")}</dd>
+</dl></section>`;
 }
 function fmtUp(m){if(m==null)return"--";if(m<60)return m+" min";if(m<2880)return Math.floor(m/60)+" h "+(m%60)+" min";return T("%s days",Math.floor(m/1440))}
 
@@ -235,8 +277,19 @@ $("grid").addEventListener("click",async ev=>{
   if(b.dataset.resume)p.set("resume","1");else p.set("on",b.dataset.on);
   b.closest(".r").querySelectorAll("button").forEach(x=>x.disabled=true);
   try{await fetch("/switch",{method:"POST",body:p})}catch(e){}
-  schedule(300);
+  active=Date.now();schedule(300);
 });
+/* start: the last values (if this browser has them) while the board answers */
+{
+  const kl=kept("lang");
+  if(kl&&kl.l){TXT=kl.TXT||{};lang=kl.l;langV=kl.v||"";document.documentElement.lang=lang}
+  const kd=kept("data");
+  if(kd&&kd.d)try{
+    render(kd.d);document.body.classList.add("stale");
+    $("state").textContent=T("Values from %s, loading…",new Date(kd.t).toLocaleTimeString(lang,{hour:"2-digit",minute:"2-digit"}));
+  }catch(e){$("grid").innerHTML=""}
+  $("upd").textContent="↻ "+T("Update");
+}
 load();
 </script></body></html>
 )PAGE";

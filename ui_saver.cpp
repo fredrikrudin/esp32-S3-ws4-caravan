@@ -101,6 +101,19 @@ void build_saver() {
   lv_label_set_text(soc_label, "");
 }
 
+/* Shows the screen saver at once instead of after 30 s (entering battery mode) */
+void saver_show_now() {
+  if (lv_scr_act() == saver_scr) {
+    set_backlight(bl_saver);
+    return;
+  }
+  kb_hide();
+  saver_update_soc();
+  lv_scr_load(saver_scr);
+  set_backlight(bl_saver);
+  power_set_saving(true);
+}
+
 void saver_timer_cb(lv_timer_t *t) {
   bool active = (lv_scr_act() == saver_scr);
 

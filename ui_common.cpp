@@ -51,7 +51,9 @@ void kb_hide() {
 static void ta_event_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   lv_obj_t *ta = lv_event_get_target(e);
-  if (code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) {
+  /* only on a real tap: LVGL focuses a field as soon as a finger lands on it, also
+     when the finger then scrolls the page, but sends CLICKED only when it didn't */
+  if (code == LV_EVENT_CLICKED) {
     kb_show(ta);
   } else if (code == LV_EVENT_DEFOCUSED) {
     kb_hide();
@@ -154,6 +156,16 @@ lv_obj_t *make_slider(lv_obj_t *parent, int min, int max, int val, lv_event_cb_t
    The caller gets the button matrix; use set_segment() to show the state. */
 static const char *seg_map[3];  // filled in make_segment(), translated
 
+/* The chosen half shows the state at a glance: green for On, grey for Off */
+static void segment_draw_cb(lv_event_t *e) {
+  lv_obj_draw_part_dsc_t *dsc = lv_event_get_draw_part_dsc(e);
+  if (dsc->class_p != &lv_btnmatrix_class || dsc->type != LV_BTNMATRIX_DRAW_PART_BTN || !dsc->rect_dsc) return;
+  lv_obj_t *bm = lv_event_get_target(e);
+  if (!lv_btnmatrix_has_btn_ctrl(bm, dsc->id, LV_BTNMATRIX_CTRL_CHECKED)) return;
+  dsc->rect_dsc->bg_color = dsc->id == 1 ? lv_color_hex(0x2E9E4F) : lv_color_hex(0x4A525C);
+  dsc->rect_dsc->border_color = dsc->rect_dsc->bg_color;
+}
+
 lv_obj_t *make_segment(lv_obj_t *parent, lv_event_cb_t cb, void *user_data) {
   lv_obj_t *bm = lv_btnmatrix_create(parent);
   seg_map[0] = TR("Off");
@@ -178,6 +190,7 @@ lv_obj_t *make_segment(lv_obj_t *parent, lv_event_cb_t cb, void *user_data) {
   lv_obj_set_style_bg_color(bm, lv_color_hex(0x2F6FB5), LV_PART_ITEMS | LV_STATE_CHECKED);
 
   lv_obj_add_event_cb(bm, cb, LV_EVENT_VALUE_CHANGED, user_data);
+  lv_obj_add_event_cb(bm, segment_draw_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
   return bm;
 }
 
@@ -358,7 +371,7 @@ void build_ui() {
      0 Start, 1 Power, 2 Temp, 3 Weather, 4 Battery, 5 Shelly, 6 Relays, 7 Settings */
   tab_home = lv_tabview_add_tab(tv, LV_SYMBOL_HOME);  // start page
   tab_power = lv_tabview_add_tab(tv, "Power");
-  tab_temp = lv_tabview_add_tab(tv, "Ruuvi");
+  tab_temp = lv_tabview_add_tab(tv, "Temp");
   tab_weather = lv_tabview_add_tab(tv, "Weather");
   tab_battery = lv_tabview_add_tab(tv, "Battery");
   tab_shelly = lv_tabview_add_tab(tv, "Shelly");

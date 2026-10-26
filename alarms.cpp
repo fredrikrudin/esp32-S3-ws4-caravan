@@ -116,7 +116,7 @@ void alarms_check() {
     if (!cfg[i].used) continue;
     if (dat[i].key_bad) {
       add_alarm(ALARM_LEVEL_WARN, TR("%s: wrong key"), cfg[i].name);
-    } else if (dat[i].last_seen && now - dat[i].last_seen > 600000UL) {
+    } else if (dat[i].last_seen && now - dat[i].last_seen > sensor_stale_ms(600000UL)) {
       add_alarm(ALARM_LEVEL_WARN, TR("%s: no signal"), cfg[i].name);
     }
     if (cfg[i].type == VIC_INVERTER && vic_fresh(dat[i], now) && dat[i].key_ok) {

@@ -27,12 +27,56 @@ void power_set_saving(bool asleep) {
   screen_asleep = asleep;  // the weather is not fetched while nobody looks
 }
 
+/* ---------- where internal RAM goes ---------- */
+static int32_t mem_sum[MEM_SOURCES];  // written from two tasks: rough sums are enough
+static uint32_t mem_count[MEM_SOURCES];
+
+void mem_note(int source, int32_t change) {
+  if (source < 0 || source >= MEM_SOURCES) return;
+  mem_sum[source] += change;  // only rough sums: an occasional lost update doesn't matter
+  mem_count[source]++;
+}
+
+/* Every 10 minutes: free internal RAM and how it changed, and the part of that
+   change that happened during Bluetooth scans and battery connection attempts.
+   A steady fall that matches one of them shows what keeps memory. */
+static void mem_report() {
+  static uint32_t next = 0, last_free = 0;
+  if (next && (int32_t)(millis() - next) < 0) return;
+  next = millis() + 600000;
+  uint32_t f = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  if (last_free)
+    logf("Memory: internal free %u (lowest %u, largest block %u), %+d in 10 min; "
+         "during %u Bluetooth scans %+d, during %u battery connects %+d, during %u Shelly Bluetooth reads %+d",
+         (unsigned)f, (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), (int)(f - last_free),
+         (unsigned)mem_count[MEM_BLE_SCAN], (int)mem_sum[MEM_BLE_SCAN],
+         (unsigned)mem_count[MEM_BMS_CONNECT], (int)mem_sum[MEM_BMS_CONNECT],
+         (unsigned)mem_count[MEM_SHELLY_BT], (int)mem_sum[MEM_SHELLY_BT]);
+  last_free = f;
+  for (int i = 0; i < MEM_SOURCES; i++) mem_sum[i] = mem_count[i] = 0;
+}
+
 /* Called from loop() */
 void perf_service() {
+  mem_report();
 
   static uint32_t next = 0;
   if (next && (int32_t)(millis() - next) < 0) return;
   next = millis() + 30000;
+
+  /* Always on: internal RAM running short is what stops WiFi and the web page,
+     so it is logged (at most every 10 minutes) even without the performance log */
+  {
+    static uint32_t next_warn = 0;
+    uint32_t f = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (f < 16384 && (int32_t)(millis() - next_warn) >= 0) {
+      next_warn = millis() + 600000;
+      logf("Memory: internal RAM low, %u free (lowest %u, largest block %u) after %lu min",
+           (unsigned)f, (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), (unsigned long)(millis() / 60000));
+    }
+  }
   if (!DEBUG_LOG && !feat_perflog) return;
 
   static uint32_t worst = 0xFFFFFFFF;
@@ -68,8 +112,8 @@ void perf_service() {
 /* ---------- running on the onboard LiPo ----------
  * There is no "external power lost" signal, so it is inferred from the cell:
  * not charging, and the voltage falling steadily. On battery the board becomes a
- * local display: WiFi and Bluetooth off, screen dimmed, CPU slowed, and whatever
- * was last collected stays on screen. Below the shutdown threshold it closes the
+ * local display: WiFi off, Bluetooth scanning once every 5 minutes so the Victron
+ * and RuuviTag readings stay current, and the screen dimmed until touched. Below the shutdown threshold it closes the
  * log, unmounts the card and sleeps, so the cell is never run flat.
  */
 static bool on_battery = false;
@@ -99,12 +143,20 @@ static void enter_battery_mode(int pct) {
   log_fault("Power: external power lost, running on the battery (%d%%)", pct);
 
   /* a local display from here on */
-  ble_pause_scan(true);
-  if (NimBLEDevice::isInitialized()) NimBLEDevice::deinit(true);
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_OFF);
+  /* Bluetooth stays on, but listens only one scan every 5 minutes (BATT_SCAN_S in
+     ble.cpp), so the Victron and RuuviTag readings keep coming at little cost */
+  ble_pause_scan(false);  // in case WiFi was joining and had paused it
+  ble_scan_now();         // the first one now, then every 5 minutes
+  logf("Power: Bluetooth now scans every %d minutes", BATT_SCAN_S / 60);
 
-  set_backlight(10);  // the CPU stays at 240 MHz: 80 MHz froze the board
+  /* dim straight away, as the screen saver: a tap brings the screen back at full
+     brightness, and it dims again after 30 s without touch. (Dimming the main
+     screen directly left it dark with nothing to bring it back: touches went to
+     the dark screen, so the board looked switched off.) The CPU stays at 240 MHz:
+     80 MHz froze the board. */
+  saver_show_now();
 
   make_banner();
   lv_obj_clear_flag(batt_banner, LV_OBJ_FLAG_HIDDEN);
@@ -130,7 +182,7 @@ static void soft_shutdown(int pct) {
   sd_log_unmount();  // flush and close the log first
   set_backlight(0);
   delay(200);
-  esp_deep_sleep_start();  // the reset button, or external power, starts it again
+  esp_deep_sleep_start();  // only the reset button starts it again
 }
 
 /* Called from loop(); samples the cell every 20 s.

@@ -24,14 +24,17 @@
 #include <HTTPClient.h>
 
 #define SHELLY_POLL_MS 15000   // how often each device is read
-#define SHELLY_TIMEOUT 6000    // BLE answer timeout
+#define SHELLY_TIMEOUT 10000   // BLE answer timeout (10 s, as in esp32-shelly-ble-rpc)
 #define SHELLY_HTTP_MS 4000    // WiFi request timeout
 #define SHELLY_MAX_BACKOFF 8   // failures beyond which the interval stops growing
 
 static const char *SHELLY_SVC = "5f6d4f53-5f52-5043-5f53-56435f49445f";
 static const char *SHELLY_DATA = "5f6d4f53-5f52-5043-5f64-6174615f5f5f";
-static const char *SHELLY_TX = "5f6d4f53-5f52-5043-5f72-785f63746c5f";
-static const char *SHELLY_RX = "5f6d4f53-5f52-5043-5f74-785f63746c5f";
+/* The mongoose-os RPC profile. TX control ("_tx_ctl_", 0x74 0x78) is where the
+   request length goes, RX control ("_rx_ctl_", 0x72 0x78) gives the answer's
+   length. These two were swapped before, so the Shelly never got a request. */
+static const char *SHELLY_TX = "5f6d4f53-5f52-5043-5f74-785f63746c5f";
+static const char *SHELLY_RX = "5f6d4f53-5f52-5043-5f72-785f63746c5f";
 
 static SemaphoreHandle_t sh_mtx;
 static ShellyData sh_data[MAX_SHELLY];
@@ -39,7 +42,7 @@ static volatile int8_t set_req_idx = -1;  // device the UI wants to switch
 static volatile bool set_req_on = false;
 
 static NimBLEClient *cl = nullptr;
-static NimBLERemoteCharacteristic *ch_data, *ch_tx;
+static NimBLERemoteCharacteristic *ch_data, *ch_tx, *ch_rx;
 static volatile uint32_t rx_len = 0;
 
 /* ---------- shared state ---------- */
@@ -130,27 +133,42 @@ static void rx_notify(NimBLERemoteCharacteristic *chr, uint8_t *d, size_t len, b
 }
 
 static bool rpc_call(const char *json, String &answer) {
-  if (!ch_data || !ch_tx) return false;
+  if (!ch_data || !ch_tx || !ch_rx) return false;
   uint32_t n = strlen(json);
   uint8_t hdr[4] = { (uint8_t)(n >> 24), (uint8_t)(n >> 16), (uint8_t)(n >> 8), (uint8_t)n };
   rx_len = 0;
-  if (!ch_tx->writeValue(hdr, 4, true)) return false;
+  if (!ch_tx->writeValue(hdr, 4, !ch_tx->canWriteNoResponse())) return false;
 
   uint16_t chunk = cl->getMTU() > 23 ? cl->getMTU() - 3 : 20;
   for (uint32_t off = 0; off < n; off += chunk) {
     uint32_t len = n - off < chunk ? n - off : chunk;
-    if (!ch_data->writeValue((const uint8_t *)json + off, len, true)) return false;
+    if (!ch_data->writeValue((const uint8_t *)json + off, len, !ch_data->canWriteNoResponse())) return false;
+    if (off + len < n) vTaskDelay(pdMS_TO_TICKS(10));
   }
 
-  uint32_t t0 = millis();
-  while (!rx_len && millis() - t0 < SHELLY_TIMEOUT) vTaskDelay(pdMS_TO_TICKS(20));
+  /* the answer's length: notified, or read from RX control until it is there */
+  uint32_t t0 = millis(), next_read = t0 + 300;
+  while (!rx_len && millis() - t0 < SHELLY_TIMEOUT) {
+    vTaskDelay(pdMS_TO_TICKS(20));
+    if (!rx_len && (int32_t)(millis() - next_read) >= 0 && ch_rx->canRead()) {
+      next_read = millis() + 250;
+      NimBLEAttValue v = ch_rx->readValue();
+      if (v.length() >= 4) {
+        const uint8_t *d = v.data();
+        rx_len = ((uint32_t)d[0] << 24) | ((uint32_t)d[1] << 16) | (d[2] << 8) | d[3];
+      }
+    }
+  }
   if (!rx_len) return false;
 
   answer = "";
   while (answer.length() < rx_len && millis() - t0 < SHELLY_TIMEOUT) {
     NimBLEAttValue v = ch_data->readValue();
-    if (!v.length()) break;
-    answer += v.c_str();
+    if (!v.length()) {  // not ready yet: try again shortly
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
+    answer.concat((const char *)v.data(), v.length());
   }
   return answer.length() >= rx_len;
 }
@@ -173,12 +191,43 @@ static bool http_rpc(const ShellyCfg &c, const char *path, String &answer) {
 }
 
 /* ---------- one device ---------- */
+/* Shelly firmware 2.0 and later only answers RPC over Bluetooth on an encrypted
+   connection with a device it has paired with ("Just Works": no code to type).
+   Pairing happens on the first connection while the Shelly is in pairing mode
+   (Shelly app or web page: Bluetooth -> Pair new device, 3 minutes); the keys
+   are kept in flash on both sides, so later connections just encrypt. */
+static bool paired_failed = false;  // the last attempt connected but could not pair or encrypt
+
+/* A Bluetooth read that never ends (the Shelly stops answering halfway, without
+   the connection dropping) would stop all Shelly control. shelly_watch(), called
+   from loop(), notices it and drops the connection, which ends every wait. */
+static volatile uint32_t bt_busy_since = 0;
+static const char *volatile bt_stage = "";
+static volatile int bt_dev = -1;
+
+void shelly_watch() {
+  static uint32_t warned_for = 0;
+  uint32_t since = bt_busy_since;
+  /* signed: the task may have just set "since" (millis() | 1) a moment after this
+     millis(), and unsigned that looked like 49 days and raised a false alarm */
+  if (!since || (int32_t)(millis() - since) < 40000 || warned_for == since) return;
+  warned_for = since;
+  log_fault("Shelly %d: no progress for 40 s (at: %s) - dropping the Bluetooth connection", bt_dev + 1, bt_stage);
+  if (cl && cl->isConnected()) cl->disconnect();
+}
+
 static bool shelly_connect(const ShellyCfg &c) {
   if (!cl) {
+    /* as esp32-shelly-ble-rpc does it: bond, no passkey, and legacy pairing
+       (with "secure connections" the Shelly encrypted the link but kept no bond) */
+    NimBLEDevice::setSecurityAuth(true, false, false);
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
+    NimBLEDevice::setMTU(517);  // fewer pieces per RPC message
     cl = NimBLEDevice::createClient();
     cl->setConnectTimeout(8000);
   }
-  ch_data = ch_tx = nullptr;
+  paired_failed = false;
+  ch_data = ch_tx = ch_rx = nullptr;
 
   ble_pause_scan(true);
   vTaskDelay(pdMS_TO_TICKS(150));
@@ -186,6 +235,35 @@ static bool shelly_connect(const ShellyCfg &c) {
   ble_pause_scan(false);
   if (!ok) return false;
 
+  bt_stage = "pairing / encrypting";
+  bool secured = cl->secureConnection();  // pairs the first time, encrypts after that
+  if (!secured) {
+    /* The board still has a pairing the Shelly no longer has (the Shelly was reset,
+       or its list of paired devices was cleared). Encrypting with the old keys can
+       never work, and NimBLE won't pair afresh while it keeps them: forget them and
+       pair again at once, which works while the Shelly is in pairing mode. */
+    NimBLEAddress addr(std::string(c.mac), c.addr_type);
+    if (NimBLEDevice::isBonded(addr)) {
+      NimBLEDevice::deleteBond(addr);
+      logf("Shelly: the Shelly no longer knows this board; old pairing removed, pairing again");
+      if (cl->isConnected()) secured = cl->secureConnection();  // else on the next try
+    }
+  }
+  static bool logged_ok = false;  // a working connection is logged once, a failing one each time
+  if (!secured || !logged_ok) {
+    logged_ok = secured;
+    /* what the pairing gave: in the log, to see why a Shelly may still refuse */
+    NimBLEConnInfo ci = cl->getConnInfo();
+    logf("Shelly: %s, encrypted %s, bonded %s, authenticated %s; the board keeps %d pairing(s)",
+         secured ? "secured" : "pairing failed", ci.isEncrypted() ? "yes" : "no", ci.isBonded() ? "yes" : "no",
+         ci.isAuthenticated() ? "yes" : "no", NimBLEDevice::getNumBonds());
+  }
+  if (!secured) {
+    paired_failed = true;
+    cl->disconnect();
+    return false;
+  }
+  bt_stage = "finding the RPC service";
   cl->exchangeMTU();
   NimBLERemoteService *svc = cl->getService(NimBLEUUID(SHELLY_SVC));
   if (!svc) {
@@ -194,12 +272,12 @@ static bool shelly_connect(const ShellyCfg &c) {
   }
   ch_data = svc->getCharacteristic(NimBLEUUID(SHELLY_DATA));
   ch_tx = svc->getCharacteristic(NimBLEUUID(SHELLY_TX));
-  NimBLERemoteCharacteristic *ch_rx = svc->getCharacteristic(NimBLEUUID(SHELLY_RX));
+  ch_rx = svc->getCharacteristic(NimBLEUUID(SHELLY_RX));
   if (!ch_data || !ch_tx || !ch_rx) {
     cl->disconnect();
     return false;
   }
-  ch_rx->subscribe(true, rx_notify);
+  if (ch_rx->canNotify()) ch_rx->subscribe(true, rx_notify);  // or it is read (rpc_call)
   return true;
 }
 
@@ -277,15 +355,24 @@ static bool shelly_poll(int i, bool do_set, bool on) {
 
   /* ---------------- Bluetooth ---------------- */
   xSemaphoreTake(ble_conn_mtx, portMAX_DELAY);  // never connect while another task is connecting
+  bt_dev = i;
+  bt_stage = "connecting";
+  bt_busy_since = millis() | 1;
+  uint32_t free_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);  // for the "Memory:" log line
   if (!shelly_connect(c)) {
+    cl->deleteServices();
+    ch_data = ch_tx = ch_rx = nullptr;
+    bt_busy_since = 0;
     xSemaphoreGive(ble_conn_mtx);
-    note_failure(i, TR("No Bluetooth connection"));
+    mem_note(MEM_SHELLY_BT, (int32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - (int32_t)free_before);
+    note_failure(i, paired_failed ? TR("Not paired - pair on the Shelly, then tap") : TR("No Bluetooth connection"));
     return false;
   }
 
   String answer;
   bool ok = true;
   if (do_set) {
+    bt_stage = "switching";
     char req[96];
     snprintf(req, sizeof(req), "{\"id\":1,\"method\":\"Switch.Set\",\"params\":{\"id\":0,\"on\":%s}}", on ? "true" : "false");
     ok = rpc_call(req, answer);
@@ -293,15 +380,23 @@ static bool shelly_poll(int i, bool do_set, bool on) {
     vTaskDelay(pdMS_TO_TICKS(200));
   }
   if (ok) {
+    bt_stage = "reading";
     ok = rpc_call("{\"id\":2,\"method\":\"Switch.GetStatus\",\"params\":{\"id\":0}}", answer);
     if (!ok) note_failure(i, TR("No answer over Bluetooth"));
   }
   if (ok) ok = apply_status(i, answer);
   if (ok) sh_status(i, TR("OK over Bluetooth"));
 
+  bt_stage = "disconnecting";
   cl->disconnect();
   vTaskDelay(pdMS_TO_TICKS(100));
+  /* The services and characteristics found on the device stay in internal RAM
+     until deleted: let them go, the next read finds them again */
+  cl->deleteServices();
+  ch_data = ch_tx = ch_rx = nullptr;
+  bt_busy_since = 0;
   xSemaphoreGive(ble_conn_mtx);
+  mem_note(MEM_SHELLY_BT, (int32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - (int32_t)free_before);
   xSemaphoreTake(sh_mtx, portMAX_DELAY);
   sh_data[i].connected = false;
   xSemaphoreGive(sh_mtx);
@@ -323,12 +418,17 @@ static uint32_t poll_delay(int i) {
   xSemaphoreGive(sh_mtx);
   if (!f) return SHELLY_POLL_MS;
   if (f > SHELLY_MAX_BACKOFF) f = SHELLY_MAX_BACKOFF;
-  return SHELLY_POLL_MS * (1u << (f - 1));
+  uint32_t ms = SHELLY_POLL_MS * (1u << (f - 1));
+  return ms > 240000 ? 240000 : ms;  // at most 4 minutes (was up to 32): a fixed Shelly is found again soon
 }
 
 static void shelly_task(void *arg) {
+  /* Bluetooth is started after this task (setup(): WiFi first). Touching NimBLE
+     before NimBLEDevice::init() crashed the board at every start. */
+  while (!NimBLEDevice::isInitialized()) vTaskDelay(pdMS_TO_TICKS(200));
+  vTaskDelay(pdMS_TO_TICKS(2000));  // and let WiFi and the first scan settle
   for (;;) {
-    if (!feat_shelly) {
+    if (!feat_shelly || power_on_battery()) {  // on the LiPo: no connections, only scans
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }

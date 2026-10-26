@@ -89,12 +89,12 @@ bool vic_fresh(const VicData &d, uint32_t now) {
   /* on battery the radios are off, so the last readings are all there is:
      keep showing them rather than letting everything go stale */
   if (power_on_battery()) return d.last_seen != 0;
-  return d.last_seen && now - d.last_seen < VIC_STALE_MS;
+  return d.last_seen && now - d.last_seen < sensor_stale_ms(VIC_STALE_MS);
 }
 
 const char *vic_status(const VicData &d, uint8_t type, uint32_t now) {
   if (!d.last_seen) return N_("Not heard yet");
-  if (now - d.last_seen >= VIC_STALE_MS) return N_("No signal");
+  if (now - d.last_seen >= sensor_stale_ms(VIC_STALE_MS)) return N_("No signal");
   if (d.key_bad) return N_("Wrong key");
   if (!vic_supported(type)) return N_("Type not supported");
   return N_("OK");

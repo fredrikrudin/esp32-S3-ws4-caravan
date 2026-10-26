@@ -239,7 +239,7 @@ void ruuvi_settings_refresh(const RuuviTag *copy, uint32_t now) {
       if (copy[k].used && !strcmp(copy[k].addr, ruuvi_cfg[i].mac)) t = &copy[k];
     char s[8];
     mac_short(ruuvi_cfg[i].mac, s);
-    if (t && t->has_temp && now - t->last_seen < 10UL * 60 * 1000)
+    if (t && t->has_temp && now - t->last_seen < sensor_stale_ms(10UL * 60 * 1000))
       snprintf(b, sizeof(b), TR("%s\nRuuvi %s  -  %.1f" DEG "C"), ruuvi_cfg[i].name, s, t->temp);
     else
       snprintf(b, sizeof(b), TR("%s\nRuuvi %s  -  not heard"), ruuvi_cfg[i].name, s);
@@ -256,7 +256,7 @@ void ruuvi_settings_refresh(const RuuviTag *copy, uint32_t now) {
   char opts[MAX_TAGS * 40] = "";
   int count = 0, cur_idx = 0;
   for (int i = 0; i < MAX_TAGS; i++) {
-    if (!copy[i].used || now - copy[i].last_seen > 10UL * 60 * 1000) continue;  // gone > 10 min
+    if (!copy[i].used || now - copy[i].last_seen > sensor_stale_ms(10UL * 60 * 1000)) continue;  // gone > 10 min
     if (ruuvi_cfg_index(copy[i].addr) >= 0) continue;                          // already added
     char s[8], line[40];
     mac_short(copy[i].addr, s);
@@ -298,20 +298,38 @@ static void bl_slider_cb(lv_event_t *e) {
 }
 
 /* ---------- Sensor scan interval ---------- */
+/* The slider moves in steps: seconds where they matter, minutes further up */
+static const uint16_t scan_steps[] = { 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 360 };
+static const int SCAN_STEPS = sizeof(scan_steps) / sizeof(scan_steps[0]);
+
+static int scan_step_of(uint16_t s) {
+  int best = 0;
+  for (int i = 0; i < SCAN_STEPS; i++)
+    if (abs((int)scan_steps[i] - (int)s) < abs((int)scan_steps[best] - (int)s)) best = i;
+  return best;
+}
+
 static void update_scan_label() {
-  if (scan_interval_s <= 1) lv_label_set_text(lbl_scan, "Update sensors: continuously (1 s)");
-  else lv_label_set_text_fmt(lbl_scan, "Update sensors: every %d s", scan_interval_s);
+  if (scan_interval_s < 60 || scan_interval_s % 60)
+    lv_label_set_text_fmt(lbl_scan, "Update sensors: every %d s", scan_interval_s);
+  else
+    lv_label_set_text_fmt(lbl_scan, "Update sensors: every %d min", scan_interval_s / 60);
 }
 
 static void scan_slider_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   if (code == LV_EVENT_VALUE_CHANGED) {
-    scan_interval_s = (uint8_t)lv_slider_get_value(lv_event_get_target(e));
+    int i = lv_slider_get_value(lv_event_get_target(e));
+    scan_interval_s = scan_steps[i < 0 ? 0 : i >= SCAN_STEPS ? SCAN_STEPS - 1 : i];
     update_scan_label();
   } else if (code == LV_EVENT_RELEASED) {
     scan_restart = true;   // apply the new interval
     cmd_save_scan = true;  // save once, when the finger lifts
   }
+}
+
+static void scan_now_cb(lv_event_t *e) {
+  ble_scan_now();
 }
 
 /* ---------- Battery: choose the BMS device ---------- */
@@ -433,7 +451,7 @@ static lv_obj_t *lbl_battmode, *sl_battpct;
 static void update_battmode_label() {
   lv_label_set_text_fmt(lbl_battmode,
                         feat_battmode
-                          ? "On battery: WiFi and Bluetooth off, screen at 10%%, last readings kept.\nShuts down at %d%%."
+                          ? "On battery: WiFi off, sensors read every 5 minutes, screen dimmed until touched.\nShuts down at %d%%."
                           : TR("Battery mode off: the board keeps running normally until the cell is flat."),
                         batt_shutdown_pct);
 }
@@ -870,9 +888,17 @@ void build_settings_tab() {
 
   /* ---- Sensor scan interval ---- */
   sec = make_section(p_sens, LV_SYMBOL_REFRESH "  Sensor scan interval");
-  lbl_scan = lv_label_create(sec);
-  make_slider(sec, 1, 10, scan_interval_s, scan_slider_cb);
+  lv_obj_t *scan_row = make_row(sec, LV_FLEX_ALIGN_SPACE_BETWEEN);
+  lbl_scan = lv_label_create(scan_row);
+  lv_obj_set_flex_grow(lbl_scan, 1);
+  make_btn(scan_row, LV_SYMBOL_REFRESH " Scan now", scan_now_cb);
+  make_slider(sec, 0, SCAN_STEPS - 1, scan_step_of(scan_interval_s), scan_slider_cb);
   update_scan_label();
+  lv_obj_t *scan_note = lv_label_create(sec);
+  lv_obj_set_width(scan_note, LV_PCT(100));
+  lv_label_set_long_mode(scan_note, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(scan_note, "Every 10 s while Settings is open, so new devices show up.");
+  lv_obj_set_style_text_color(scan_note, lv_palette_main(LV_PALETTE_GREY), 0);
 
   settings_i2c(p_ctrl);
 

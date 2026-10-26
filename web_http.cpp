@@ -12,8 +12,9 @@
 #define WRITE_BUDGET 2872       // two segments per slot per call: sent in step with the ACKs, so
                                 // replies never pile up in lwIP's buffers (internal RAM)
 #define SEND_PIECE 1436         // one TCP segment per send(): lwIP needs little memory for each
-#define MEM_RESERVE 12288       // internal RAM kept free for WiFi and Bluetooth: below this,
-                                // nothing new is sent or accepted until memory comes back
+#define MEM_RESERVE 12288       // internal RAM for WiFi and Bluetooth: below this, one
+                                // segment at a time for all connections together
+#define MEM_FLOOR 6144          // below this nothing is sent or accepted until memory comes back
 
 void logf(const char *fmt, ...);  // sdlog.cpp
 
@@ -23,12 +24,14 @@ void logf(const char *fmt, ...);  // sdlog.cpp
 /* Internal RAM is what WiFi receives into and lwIP sends from. With the display,
    WiFi and Bluetooth running only ~35 kB is free, and a few replies in flight
    could take the rest: then WiFi drops packets and every connection stalls. */
-static bool mem_low = false;  // checked once per handleClient()
+static bool mem_low = false;    // below MEM_FLOOR: hold everything (checked once per handleClient())
+static bool mem_tight = false;  // below MEM_RESERVE: one segment per call
+static bool sent_this_call = false;
 static bool all_busy = false;  // a new connection is waiting for a slot
 
 /* What happened, logged once a minute when something went wrong */
 static struct {
-  uint32_t replies, busy_ms, silent, stalled, errors, low_ms;
+  uint32_t replies, busy_ms, silent, stalled, errors, low_ms, tight_ms;
   uint32_t min_free;
 } st;
 
@@ -104,6 +107,13 @@ void MiniHttp::close_slot(Slot &s) {
   s.chunk_len = s.chunk_sent = 0;
 }
 
+/* The listening socket stopped working: close it, and web_service() opens a new one */
+void MiniHttp::broken_listen(int e) {
+  logf("Web: listening socket failed (errno %d), opening it again", e);
+  close(listen_fd);
+  listen_fd = -1;
+}
+
 /* A slot for a new connection: a free one, or one that has sent nothing for a
    second (a browser's spare connection) or whose reply is already sent */
 MiniHttp::Slot *MiniHttp::free_slot() {
@@ -131,7 +141,12 @@ void MiniHttp::accept_new() {
     FD_ZERO(&rd);
     FD_SET(listen_fd, &rd);
     struct timeval tv = { 0, 0 };
-    if (select(listen_fd + 1, &rd, nullptr, nullptr, &tv) <= 0) return;  // nobody waiting
+    int ready = select(listen_fd + 1, &rd, nullptr, nullptr, &tv);
+    if (ready < 0 && !try_later(errno)) {
+      broken_listen(errno);
+      return;
+    }
+    if (ready <= 0) return;  // nobody waiting
     Slot *fs = free_slot();
     if (!fs) {
       all_busy = true;
@@ -140,7 +155,10 @@ void MiniHttp::accept_new() {
     struct sockaddr_in a;
     socklen_t al = sizeof(a);
     int fd = accept(listen_fd, (struct sockaddr *)&a, &al);
-    if (fd < 0) return;  // nobody waiting
+    if (fd < 0) {
+      if (!try_later(errno) && errno != ECONNABORTED) broken_listen(errno);
+      return;  // nobody waiting
+    }
     set_nonblocking(fd);
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
@@ -222,6 +240,7 @@ void MiniHttp::dispatch(Slot &s, size_t he, size_t body_len) {
   req_body = s.in.substring(he + 4, he + 4 + body_len);
   req_cookie = header_value(lower, head, "cookie");
   req_inm = header_value(lower, head, "if-none-match");
+  req_ae = header_value(lower, head, "accept-encoding");
   s.in = String();
   extra_headers = String();
   collecting = false;
@@ -246,7 +265,11 @@ void MiniHttp::dispatch(Slot &s, size_t he, size_t body_len) {
 
 void MiniHttp::write_slot(Slot &s) {
   size_t budget = WRITE_BUDGET;
-  if (mem_low) budget = 0;  // only the timeout check below
+  if (mem_low || (mem_tight && sent_this_call)) budget = 0;  // only the timeout check below
+  else if (mem_tight) {
+    budget = SEND_PIECE;  // this slot sends one segment; the others wait for the next call
+    sent_this_call = true;
+  }
   while (budget) {
     const char *p;
     size_t left;
@@ -331,19 +354,28 @@ void MiniHttp::report() {
   if (!st.min_free || f < st.min_free) st.min_free = f;
   static uint32_t last_call = 0;
   if (mem_low) st.low_ms += millis() - last_call;  // how long sending was held back
+  else if (mem_tight) st.tight_ms += millis() - last_call;  // how long it was slowed down
   if (all_busy) st.busy_ms += millis() - last_call;  // how long a new connection waited
   last_call = millis();
-  mem_low = f < MEM_RESERVE;
+  mem_low = f < MEM_FLOOR;
+  mem_tight = f < MEM_RESERVE;
+  sent_this_call = false;
   static uint32_t next = 0;
   if ((int32_t)(millis() - next) < 0) return;
   next = millis() + 60000;
-  if (st.busy_ms > 1000 || st.stalled || st.errors || st.low_ms)
+  if (st.busy_ms > 1000 || st.stalled || st.errors || st.low_ms || st.tight_ms > 10000)
     logf("Web, last minute: %u replies, all connections busy %u.%u s, %u stalled, %u send errors, "
-         "held back %u.%u s for memory, internal RAM free %u (lowest %u)",
+         "slowed %u s and held back %u.%u s for memory, internal RAM free %u (lowest %u)",
          (unsigned)st.replies, (unsigned)(st.busy_ms / 1000), (unsigned)(st.busy_ms % 1000 / 100),
-         (unsigned)st.stalled, (unsigned)st.errors,
+         (unsigned)st.stalled, (unsigned)st.errors, (unsigned)(st.tight_ms / 1000),
          (unsigned)(st.low_ms / 1000), (unsigned)(st.low_ms % 1000 / 100), (unsigned)f, (unsigned)st.min_free);
   memset(&st, 0, sizeof(st));
+}
+
+bool MiniHttp::busy() const {
+  for (const Slot &s : slot)
+    if (s.state >= 2 || (s.state == 1 && s.in.length())) return true;
+  return false;
 }
 
 void MiniHttp::handleClient() {
@@ -412,6 +444,7 @@ bool MiniHttp::hasHeader(const char *name) const {
 String MiniHttp::header(const char *name) const {
   if (!strcasecmp(name, "Cookie")) return req_cookie;
   if (!strcasecmp(name, "If-None-Match")) return req_inm;
+  if (!strcasecmp(name, "Accept-Encoding")) return req_ae;
   return String();
 }
 

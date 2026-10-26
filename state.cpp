@@ -38,7 +38,7 @@ volatile bool feat_battmode = false;  // off until switched on
 volatile uint8_t batt_shutdown_pct = 20;
 volatile bool feat_csv = false;     // measurement logging is off until switched on
 volatile uint8_t csv_interval_min = 5;
-volatile uint8_t scan_interval_s = 1;
+volatile uint16_t scan_interval_s = SCAN_MIN_S;
 volatile uint8_t bl_normal = 100;
 volatile uint8_t bl_saver = 10;
 
@@ -90,7 +90,7 @@ void load_cfg() {
   memset(shelly_cfg, 0, sizeof(shelly_cfg));
   if (prefs.getBytesLength("shelly") == sizeof(shelly_cfg)) prefs.getBytes("shelly", shelly_cfg, sizeof(shelly_cfg));
 
-  scan_interval_s = constrain(prefs.getUChar("scanint", 1), 1, 10);
+  scan_interval_s = constrain(prefs.getUShort("scan_s", SCAN_MIN_S), SCAN_MIN_S, SCAN_MAX_S);  // "scanint" (1-10 s) is no longer read
   bl_normal = constrain(prefs.getUChar("bl", 100), 5, 100);
   bl_saver = constrain(prefs.getUChar("blsaver", 10), 0, 100);
 

@@ -209,14 +209,30 @@ the same data the screen shows, with no extra locking. A page render takes a few
 
 **mDNS** (`MDNS.begin("caravan")`) removes the need to know the IP. Works on iOS, macOS and
 Windows; some Android versions don't resolve `.local`.
+With modem sleep on (it must be, next to Bluetooth) the board misses some mDNS questions, so
+`.local` can stop resolving after a few hours. Announce the name every minute
+(`mdns_netif_action(netif, MDNS_EVENT_ANNOUNCE_IP4)`): clients cache it for the 120 s TTL.
+Restart mDNS after a WiFi reconnect.
 
 **Cookie login without TLS:** a random token per boot, `Set-Cookie` after a correct password,
 `server.collectHeaders({"Cookie"})` to read it back. Enough to keep strangers on a campsite
 network out; not real security. HTTPS needs 40+ kB in one block, which this board hasn't got
 (see Memory).
 
+**Display bounce buffers are the biggest user of internal RAM.** The RGB panel driver feeds
+the display from two DMA buffers in internal RAM, refilled from the PSRAM framebuffer, so the
+picture holds when PSRAM is busy. GFX Library for Arduino 1.5.x hard-codes 40 lines
+(`40 * w` in `Arduino_ESP32RGBPanel.cpp`): 2 × 480 × 40 × 2 bytes = 77 kB. 1.6 takes the size
+as a constructor argument; `board.cpp` passes `BOUNCE_LINES` (10 = 2 × 9.6 kB) when the
+library accepts it. The frame (480 × 480) must be a multiple of the buffer size.
+
 ## Power and CPU
 
+- **Don't scan forever with an active BLE scan.** NimBLE keeps each scannable device that
+  hasn't sent its scan response yet until the scan ends, in internal RAM. Phones change
+  their address every few minutes, so a scan started with duration 0 and never restarted
+  kept a growing list; internal RAM went from 32 kB to under 7 kB in an hour. Scan in
+  short bursts (3 s every 10 s or more), each started fresh (not "continue").
 - **Keep WiFi modem sleep on** (`WiFi.setSleep(true)`, the default) while Bluetooth runs.
   WiFi and Bluetooth share one antenna, and Espressif calls modem sleep "the essential
   prerequisite for coexistence": the access point holds packets while Bluetooth has the

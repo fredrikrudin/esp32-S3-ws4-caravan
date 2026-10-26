@@ -19,7 +19,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 | ![Alarm](screen-alarm.png) | ![History](screen-history.png) |
 | **Warnings and alarms** – a banner on Home, orange for warnings and red for alarms | **History** – solar and consumption per hour or per day, reached by tapping a Power tile |
 | ![Ruuvi](screen-ruuvi.png) | ![Weather](screen-weather.png) |
-| **Ruuvi** – each tag with its reading and the last 7 days: daily low in blue, high in orange | **Weather** – now, today's high and low, and three days ahead; updated hourly, or now with Refresh |
+| **Temp** – each RuuviTag with its reading and the last 7 days: daily low in blue, high in orange | **Weather** – now, today's high and low, and three days ahead; updated hourly, or now with Refresh |
 | ![Relays](screen-relays.png) | ![Shelly](screen-shelly.png) |
 | **Relays** – one Off/On control per relay, in the Victron switch-pane style | **Shelly** – plugs and switches over WiFi or Bluetooth, with power and the reason when something fails |
 | ![Settings: Connect](screen-settings.png) | ![Settings: Sensors](screen-settings-sensors.png) |
@@ -38,7 +38,7 @@ Caravan display for the **Waveshare ESP32-S3-Touch-LCD-4 (V4)**, the 480×480 to
 |---|---|
 | **⌂ Start** | Large clock and date between two gradient gauges: battery on the left with Time To Go, solar on the right. Ten-minute graphs under each, then inside and outside temperature and how many relays are on. A warning banner appears across the top when something needs attention |
 | **Power** | The battery in the middle, chargers on the left, the AC side on the right, DC loads below. Each connection lights up in its device's colour while energy flows, and the solar, battery and loads tiles carry a ten-minute graph. Tap any tile for the history: solar and consumption per hour over 24 hours, or per day over 7 days |
-| **Ruuvi** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery and signal, and a chart of the last 7 days per tag: each day's low (blue) and high (orange), in the colours of Victron VRM. The 7-day high and low sit under the reading. The history is kept in flash, so it survives a restart |
+| **Temp** | Up to 3 named RuuviTags: temperature, humidity, pressure, tag battery and signal, and a chart of the last 7 days per tag: each day's low (blue) and high (orange), in the colours of Victron VRM. The 7-day high and low sit under the reading. The history is kept in flash, so it survives a restart |
 | **Weather** | Current conditions, high and low, feels-like, humidity, wind and a 3-day forecast (Open-Meteo). Fetched every hour while the screen is awake, never while the screen saver is on (it catches up as soon as the screen wakes), and at once with the **Refresh** button. A failed fetch is tried again after a minute |
 | **Shelly** | Up to 4 plugs or switches, each over **WiFi** (local HTTP RPC) or **Bluetooth** (BLE RPC): power, on/off, and the reason when something fails. Hidden until a device is added |
 | **Relays** | Up to 8 relays on a PCF8574, each an Off \| On control in the Victron switch-pane style. Hidden until a board answers |
@@ -53,7 +53,7 @@ device gone quiet, WiFi lost, the relay board not answering, strong wind, and op
 SD card. Thresholds are under Settings → Device → Alarms, and a new alarm can wake the screen.
 
 **Running on the onboard battery**: with a LiPo fitted and the setting switched on, losing
-external power turns the display into a local instrument: WiFi and Bluetooth off, screen at 10%,
+external power turns the display into a local instrument: WiFi off, Bluetooth listening once every 5 minutes, the screen dimmed until touched,
 the last readings kept on screen and a "Running on battery" banner along the
 bottom. At your threshold it closes the log, unmounts the card and sleeps.
 
@@ -103,7 +103,7 @@ To adjust the look, change these lines at the top of `ui_saver.cpp`:
 
 **Warnings and alarms** appear as a banner on the Home page and at the top of the web page: battery SOC below your thresholds, battery voltage out of range, inverter alarms, a Victron device gone quiet, WiFi lost, the relay board not answering, strong wind and SD card trouble. Thresholds are set under Settings → Alarms, and a new alarm can wake the screen saver.
 
-A **web page** shows everything on the display: warnings, battery and solar, temperatures, charts of the last 24 hours and 10 minutes, the weather, the Victron devices, the relays, Shelly devices and schedules (with switches when Remote admin is on) and the board battery. Open **`http://caravan.local/`** (or the board's IP, shown under Settings → WiFi) on a phone, tablet or computer on the same WiFi. The page adapts to the screen: one column on a phone, two or three on a tablet or PC. It is one fixed file that the browser keeps; after that it only fetches `/json` every 5 seconds and draws itself, so the board does little work per update. If the board doesn't answer, the page says so and keeps the last values. The same data is available to scripts and Home Assistant at `/json`, and the recent log at `/log`. `sh tools/webpreview/build.sh` runs the page on a PC with example data (add `sv` for Swedish).
+A **web page** shows everything on the display: warnings, battery and solar, temperatures, charts of the last 24 hours and 10 minutes, the weather, the Victron devices, the relays, Shelly devices and schedules (with switches when Remote admin is on) and the board battery. Open **`http://caravan.local/`** (or the board's IP, shown under Settings → WiFi) on a phone, tablet or computer on the same WiFi. The page adapts to the screen: one column on a phone, two or three on a tablet or PC. It is one fixed file that the browser keeps; after that it fetches `/json` every 30 seconds (every 2 minutes once left alone; **Update** fetches at once) and draws itself, so the board does little work per update. If the board doesn't answer, the page says so and keeps the last values. The same data is available to scripts and Home Assistant at `/json`, and the recent log at `/log`. `sh tools/webpreview/build.sh` runs the page on a PC with example data (add `sv` for Swedish).
 
 The Settings page has its own row of tabs (Connect, Sensors, Control, Device) and is grouped into sections (WiFi, Web page, Weather, Temperature, Battery, Victron, Relays, Display, Scan interval, I2C). **Temperature, Battery, Relays and Shelly each have an on/off switch**: switching one off also stops its background work (Bluetooth decoding, BMS connection, I2C traffic). The Temperature, Battery, Relays and Shelly tabs disappear from the tab bar while they are off. The battery itself is chosen under Settings → Battery.
 
@@ -155,6 +155,7 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `web.cpp` | Web pages and data: `/`, `/json`, `/lang`, switching, login, log, files |
 | `web_http.cpp`, `web_http.h` | The web server: several connections at once, never makes the loop wait |
 | `web_page.h` | The web page (HTML, CSS, JavaScript) that draws itself from `/json` |
+| `web_page_gz.h` | The same page compressed, as the board sends it. Made by `python3 tools/web_gz.py`: run it after editing `web_page.h` |
 | `ble.cpp` | Bluetooth scanning |
 | `bms.cpp` | Battery BMS connection: ECO-WORTHY and JBD protocols, plus diagnostics |
 | `shelly.cpp` | Shelly devices over BLE RPC (pairing, status, switching) |
@@ -172,7 +173,7 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 | `ui_battery.cpp` | Battery tab (experimental) |
 | `ui_relays.cpp` | Relays tab + relay and I2C settings |
 | `ui_shelly.cpp` | Shelly tab + Shelly pairing settings |
-| `ui_temp.cpp` | Ruuvi tab (RuuviTag cards with a 7-day chart each) |
+| `ui_temp.cpp` | Temp tab (RuuviTag cards with a 7-day chart each) |
 | `ruuvi_hist.cpp` | Daily low and high per RuuviTag for the last 7 days, kept in flash |
 | `ui_weather.cpp` | Weather tab and clock |
 | `ui_settings.cpp` | Settings tab (WiFi, location, RuuviTags, display, scan interval) |
@@ -192,7 +193,11 @@ Everything is in one flat folder. `app.h` holds the shared configuration, data t
 ## Libraries
 
 - **lvgl 8.x** (with the `lv_conf.h` from Waveshare's examples)
-- **GFX Library for Arduino**, **SensorLib** and **WS_CH32_IO**: the versions bundled with Waveshare's ESP32-S3-Touch-LCD-4 examples
+- **GFX Library for Arduino** 1.6 or later recommended (Library Manager; tested to compile with 1.6.9).
+  Waveshare's bundled 1.5.3 works too, but it always takes 77 kB of internal RAM for the display's
+  bounce buffers; with 1.6 the firmware sets them to 10 lines and about 58 kB more is free. The
+  boot log says which: `Internal heap after display init: … (bounce buffers 10 lines)`.
+- **SensorLib** and **WS_CH32_IO**: the versions bundled with Waveshare's ESP32-S3-Touch-LCD-4 examples
 - **ArduinoJson** v7
 - **NimBLE-Arduino** by h2zero, v2.x
 
@@ -256,8 +261,8 @@ Switch on **Settings → SD card** to also append everything to `/caravan.log` o
 
 **Running on the onboard battery:** with a LiPo in the board's connector and "Keep running on the
 battery" switched on under Settings → Device → Power, losing external power turns the display into
-a local instrument: WiFi and Bluetooth off, screen at 10%, the last readings kept on
-screen and a "Running on battery" banner along the bottom with the charge left. At the threshold
+a local instrument: WiFi off, Bluetooth
+listening once every 5 minutes so the readings stay current, the screen dimmed until touched and a "Running on battery" banner along the bottom with the charge left. At the threshold
 you set (20% by default) it closes the log, unmounts the card and sleeps. Plugging power back in
 restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly 10–15 hours.
 
@@ -285,7 +290,7 @@ restarts the board so both radios come up cleanly. A 1200 mAh cell lasts roughly
 | Victron device shows "No signal" | Out of range, or Instant readout switched off |
 | Relays show "No answer from PCF8574" | Wrong address (run the I2C scan), wiring, or power |
 | Relays switch the wrong way | Toggle *Active low* in Settings |
-| Image shifted down (tab bar too low) | The RGB panel lost sync, usually at startup. Press reset. The pixel clock is set to 12 MHz in `board.cpp` to reduce it; bounce buffers would fix it properly but need a newer GFX Library for Arduino |
+| Image shifted down (tab bar too low) | The RGB panel lost sync, usually at startup. Press reset. The pixel clock is 10 MHz and the panel uses bounce buffers (`BOUNCE_LINES` in `board.cpp`, with GFX Library 1.6 or later); if it happens often, try 20 lines |
 
 ## License
 

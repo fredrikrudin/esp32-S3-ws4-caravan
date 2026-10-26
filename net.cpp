@@ -319,7 +319,7 @@ static void save_pending() {
   }
   if (cmd_save_scan) {
     cmd_save_scan = false;
-    prefs.putUChar("scanint", scan_interval_s);
+    prefs.putUShort("scan_s", scan_interval_s);
   }
   if (cmd_save_vic) {
     cmd_save_vic = false;
@@ -422,6 +422,12 @@ static void net_task(void *arg) {
       UNLOCK();
     }
     if (up && !was_up) {
+      static bool ever_up = false;
+      if (ever_up) {
+        logf("WiFi: connected again, IP %s", WiFi.localIP().toString().c_str());
+        web_wifi_back();
+      }
+      ever_up = true;
       set_wifi_status(TR("Connected to %s\nIP %s"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
       serf("WiFi connected. Internal heap free %u, largest block %u\n",
                        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
@@ -434,6 +440,7 @@ static void net_task(void *arg) {
       }
       cmd_weather = true;
     } else if (!up && was_up) {
+      logf("WiFi: connection lost (reason %u), reconnecting", last_disc_reason);
       set_wifi_status(TR("Connection lost - reconnecting..."));
     }
     was_up = up;

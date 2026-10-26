@@ -134,7 +134,7 @@ void build_temp_tab() {
   lbl_rv_empty = make_grey_label(tab_temp);
   lv_obj_set_width(lbl_rv_empty, LV_PCT(100));
   lv_obj_set_style_text_align(lbl_rv_empty, LV_TEXT_ALIGN_CENTER, 0);
-  lv_label_set_text(lbl_rv_empty, "No RuuviTags added yet.\nAdd up to 3 under Settings.");
+  lv_label_set_text(lbl_rv_empty, "No sensors added.\nAdd up to 3 under Settings.");
 
   for (int i = 0; i < MAX_RUUVI; i++) {
     RuuviCard &c = cards[i];
@@ -204,7 +204,7 @@ void ruuvi_timer_cb(lv_timer_t *t) {
     for (int i = 0; i < MAX_RUUVI; i++) {
       if (!ruuvi_cfg[i].used) continue;
       const RuuviTag *tag = tag_for(i);
-      if (tag && tag->has_temp && now - tag->last_seen < 120000UL) ruuvi_hist_note(i, ruuvi_cfg[i].mac, tag->temp);
+      if (tag && tag->has_temp && now - tag->last_seen < sensor_stale_ms(120000UL)) ruuvi_hist_note(i, ruuvi_cfg[i].mac, tag->temp);
     }
 
   char b[96];
@@ -263,7 +263,7 @@ void ruuvi_timer_cb(lv_timer_t *t) {
   if (shown) {
     lv_obj_add_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
   } else {
-    set_label(lbl_rv_empty, "No RuuviTags added yet.\nAdd up to 3 under Settings.");
+    set_label(lbl_rv_empty, "No sensors added.\nAdd up to 3 under Settings.");
     lv_obj_clear_flag(lbl_rv_empty, LV_OBJ_FLAG_HIDDEN);
   }
 

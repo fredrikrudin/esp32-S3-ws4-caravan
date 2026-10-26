@@ -29,7 +29,7 @@ void build_shelly_tab() {
   for (int i = 0; i < MAX_SHELLY; i++) {
     ShellyCard &c = cards[i];
     c.box = lv_obj_create(tab_shelly);
-    lv_obj_set_size(c.box, LV_PCT(100), 100);
+    lv_obj_set_size(c.box, LV_PCT(100), 120);  // room for the big power figure above the status line
     lv_obj_set_style_pad_all(c.box, 12, 0);
     lv_obj_clear_flag(c.box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(c.box, LV_OBJ_FLAG_CLICKABLE);
@@ -85,7 +85,15 @@ void shelly_timer_cb(lv_timer_t *t) {
     else strcpy(b, "--");
     set_label(c.power, b);
 
-    if (d.valid && !isnan(d.voltage)) snprintf(b, sizeof(b), "%s  -  %.0f V  %.2f A", d.status, d.voltage, d.current);
+    /* on or off at a glance: a coloured edge, and the state first on the status line */
+    lv_obj_set_style_border_side(c.box, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_width(c.box, d.valid ? 8 : 0, 0);
+    lv_obj_set_style_border_color(c.box, d.on ? lv_color_hex(0x2E9E4F) : lv_color_hex(0x4A525C), 0);
+    lv_obj_set_style_text_color(c.power, d.valid && d.on ? lv_color_hex(0x5CD685) : lv_color_hex(0x9AA3AD), 0);
+
+    if (d.valid && !isnan(d.voltage))
+      snprintf(b, sizeof(b), "%s  -  %s  -  %.0f V  %.2f A", d.on ? TR("ON") : TR("OFF"), d.status, d.voltage, d.current);
+    else if (d.valid) snprintf(b, sizeof(b), "%s  -  %s", d.on ? TR("ON") : TR("OFF"), d.status);
     else if (d.fails) snprintf(b, sizeof(b), TR(LV_SYMBOL_WARNING " %s  -  tap to retry"), d.status);
     else snprintf(b, sizeof(b), "%s", d.status);
     set_label(c.sub, b);
@@ -161,7 +169,7 @@ static void transport_cb(lv_event_t *e) {
   } else {
     lv_obj_clear_flag(row_ble, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(row_wifi, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(lbl_shelly_msg, "Enable Bluetooth on the Shelly first; the board bonds with it on the first connection.");
+    lv_label_set_text(lbl_shelly_msg, "");
   }
 }
 
@@ -200,7 +208,7 @@ static void shelly_add_cb(lv_event_t *e) {
     return;
   }
   shelly_add(sh_dd_mac[i], sh_dd_type[i], sh_dd_name[i]);
-  lv_label_set_text(lbl_shelly_msg, "Added. The first connection pairs with the device; this can take a moment.");
+  lv_label_set_text(lbl_shelly_msg, "Added. It pairs on the first read while the Shelly is in pairing mode.");
   shelly_list_rebuild();
 }
 
@@ -211,7 +219,7 @@ void settings_shelly(lv_obj_t *page) {
   lv_obj_t *hint = make_grey_label(parent);
   lv_obj_set_width(hint, LV_PCT(100));
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(hint, "Pair plugs and switches over Bluetooth. Enable Bluetooth on the Shelly first; the board bonds with it on the first connection.");
+  lv_label_set_text(hint, "To add a Shelly over Bluetooth: start pairing on the Shelly (Bluetooth - Pair new device), then pick it here and press Pair within 3 minutes. The pairing is kept after that.");
 
   /* how to talk to the device */
   static const char *tr_map[] = { TR("Bluetooth"), TR("WiFi"), "" };
@@ -266,6 +274,16 @@ void settings_shelly(lv_obj_t *page) {
 
 /* Called once per second with the list of named BLE devices in range */
 void shelly_settings_refresh(const BmsSeen *seen, int n, uint32_t now) {
+  /* each paired device with how it is doing ("OK via Bluetooth", "Not paired ...") */
+  for (int i = 0; i < MAX_SHELLY; i++) {
+    if (!shelly_list_lbl[i] || !shelly_cfg[i].used) continue;
+    ShellyData d;
+    shelly_get(i, &d);
+    char b[96];
+    snprintf(b, sizeof(b), "%s  (%s)  -  %s", shelly_cfg[i].name,
+             shelly_cfg[i].transport == SHELLY_WIFI ? shelly_cfg[i].host : TR("Bluetooth"), d.status[0] ? d.status : "...");
+    set_label(shelly_list_lbl[i], b);
+  }
   if (lv_dropdown_is_open(dd_shelly)) return;
 
   char cur[18] = "";

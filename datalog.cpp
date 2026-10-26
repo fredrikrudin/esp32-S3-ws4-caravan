@@ -68,7 +68,7 @@ static void csv_write_line() {
     for (int i = 0; i < MAX_RUUVI; i++) {
       if (!ruuvi_cfg[i].used) continue;
       for (int k = 0; k < MAX_TAGS; k++)
-        if (copy[k].used && !strcmp(copy[k].addr, ruuvi_cfg[i].mac) && copy[k].has_temp && now - copy[k].last_seen < 600000UL)
+        if (copy[k].used && !strcmp(copy[k].addr, ruuvi_cfg[i].mac) && copy[k].has_temp && now - copy[k].last_seen < sensor_stale_ms(600000UL))
           t[i] = copy[k].temp;
     }
   }
@@ -198,7 +198,7 @@ bool settings_backup() {
   doc["victron"] = to_hex((const uint8_t *)vic_cfg, sizeof(vic_cfg));
   xSemaphoreGive(vic_mtx);
 
-  doc["scanint"] = scan_interval_s;
+  doc["scan_s"] = scan_interval_s;
   doc["bl"] = bl_normal;
   doc["blsaver"] = bl_saver;
   doc["feat"] = (feat_ruuvi ? 0x01 : 0) | (feat_relays ? 0x02 : 0) | (feat_bms ? 0x04 : 0) | (feat_shelly ? 0x08 : 0) | (feat_remote ? 0x10 : 0) | (feat_sdlog ? 0x20 : 0) | (feat_csv ? 0x40 : 0);
@@ -236,7 +236,7 @@ bool settings_restore() {
   prefs.putInt("utcoff", doc["utcoff"] | 0);
   prefs.putString("webpass", (const char *)(doc["webpass"] | ""));
   prefs.putString("webname", (const char *)(doc["webname"] | DEFAULT_WEB_NAME));
-  prefs.putUChar("scanint", doc["scanint"] | 1);
+  prefs.putUShort("scan_s", constrain((int)(doc["scan_s"] | SCAN_MIN_S), SCAN_MIN_S, SCAN_MAX_S));
   prefs.putUChar("bl", doc["bl"] | 100);
   prefs.putUChar("blsaver", doc["blsaver"] | 10);
   prefs.putUChar("feat", doc["feat"] | 0x03);
